@@ -1,0 +1,180 @@
+name: html-video-test
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'What the video explains'
+        required: true
+        default: 'Hinduism: the core ideas, explained respectfully in under a minute'
+permissions:
+  contents: read
+concurrency:
+  group: html-video-test
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install system + media deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-core
+          npm install -g opencode-ai@1.19.6
+          mkdir -p $HOME/w/project $HOME/w/out $HOME/w/tmp
+      - name: Install html-video (Hyperframes engine) + Chromium
+        run: |
+          git clone --depth 1 https://github.com/nexu-io/html-video $HOME/w/hv
+          cd $HOME/w/hv
+          npm install -g pnpm@9
+          pnpm install
+          pnpm -r build
+          npx playwright install --with-deps chromium
+          node packages/cli/dist/bin.js doctor || true
+      - name: Cache pip + TTS models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            /home/runner/w/kokoro.onnx
+            /home/runner/w/voices.bin
+            /home/runner/w/tinyvoca
+          key: stickman-tts-v2
+      - name: Prepare local narration route (tiny-voca F2 default, Kokoro fallback, free)
+        run: |
+          pip install kokoro-onnx==0.6.1 soundfile==0.14.0 git+https://github.com/n4ze3m/dizione
+          cd $HOME/w
+          [ -s kokoro.onnx ] || curl -fsSL -o kokoro.onnx https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+          [ -s voices.bin ] || curl -fsSL -o voices.bin https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+          mkdir -p tinyvoca/phonemizer
+          [ -s tinyvoca/model.onnx ] || curl -fsSL -o tinyvoca/model.onnx https://huggingface.co/n4ze3m/tiny-voca/resolve/main/onnx/model.onnx
+          [ -s tinyvoca/config.json ] || curl -fsSL -o tinyvoca/config.json https://huggingface.co/n4ze3m/tiny-voca/resolve/main/config.json
+          for f in align.json g2p.json g2p.npz homographs.json lexicon.json lexicon.tsv sources.json; do
+            [ -s "tinyvoca/phonemizer/$f" ] || curl -fsSL -o "tinyvoca/phonemizer/$f" "https://huggingface.co/n4ze3m/tiny-voca/resolve/main/phonemizer/$f"
+          done
+          cat > $HOME/w/tts.py <<'TTS_PY'
+          import os, re, sys
+          import numpy as np, soundfile as sf
+
+          ENGINE = os.environ.get('TTS_ENGINE', 'tinyvoca').strip().lower()
+          VOCA_DIR = os.environ.get('TINYVOCA_DIR', '/home/runner/w/tinyvoca')
+          KOKORO_ONNX = os.environ.get('KOKORO_ONNX', '/home/runner/w/kokoro.onnx')
+          KOKORO_VOICES = os.environ.get('KOKORO_VOICES', '/home/runner/w/voices.bin')
+
+          def synth_kokoro(text, out, voice):
+              from kokoro_onnx import Kokoro
+              k = Kokoro(KOKORO_ONNX, KOKORO_VOICES)
+              s, sr = k.create(text, voice=voice or 'am_michael', speed=1.12, lang='en-us')
+              sf.write(out, s, sr)
+              return len(s) / sr
+
+          def synth_tinyvoca(text, out, voice):
+              os.environ.setdefault('DIZIONE_DATA', VOCA_DIR + '/phonemizer')
+              import onnxruntime as ort, dizione
+              session = ort.InferenceSession(VOCA_DIR + '/model.onnx')
+              vid = 1 if (voice or '').upper() == 'M2' else 0
+              one = lambda v: np.array([v], dtype=np.float32)
+              chunks = []
+              for part in re.split(r'(?<=[.!?])\s+', text.strip()):
+                  part = part.strip()
+                  if not part:
+                      continue
+                  if part[-1] not in '.!?':
+                      part += '.'
+                  ph = dizione.phonemize(part)
+                  audio, _ = session.run(None, {
+                      'tokens': np.array([ph.ids], dtype=np.int64),
+                      'stress': np.array([ph.stress], dtype=np.int64),
+                      'voice': np.array([vid], dtype=np.int64),
+                      'speed': one(1.0),
+                      'pitch_shift': one(0.0),
+                      'pitch_range': one(1.0),
+                  })
+                  chunks.append(audio[0])
+              if not chunks:
+                  raise SystemExit('nothing pronounceable in text')
+              wave = np.concatenate(chunks)
+              peak = float(np.abs(wave).max())
+              if peak > 0.99:
+                  wave = wave * (0.99 / peak)
+              sf.write(out, wave, 24000)
+              return len(wave) / 24000
+
+          text, out = sys.argv[1], sys.argv[2]
+          voice = sys.argv[3] if len(sys.argv) > 3 else None
+          if ENGINE == 'kokoro':
+              secs = synth_kokoro(text, out, voice)
+          else:
+              secs = synth_tinyvoca(text, out, voice or 'F2')
+          print('wrote', out, round(secs, 2), 'seconds via', ENGINE)
+          TTS_PY
+          python3 $HOME/w/tts.py 'Narration route check.' $HOME/w/out/tts-check.wav
+      - name: OpenCode builds the HTML video and renders with html-video (hy4-flash-free)
+        working-directory: /home/runner/w
+        env:
+          TOPIC: ${{ inputs.topic }}
+        run: |
+          cat > $HOME/w/PROMPT.md <<PROMPT_EOF
+          You are producing ONE experiment video using the installed html-video toolkit at /home/runner/w/hv (a clone of github.com/nexu-io/html-video, already built with pnpm; headless Chromium via Playwright is installed). Work non-interactively in this CI environment; ask no questions.
+
+          Assignment: a vertical 9:16 (1080x1920) video of 40-55 seconds when narrated, English, on this topic: "${TOPIC}"
+
+          How to use the toolkit: read /home/runner/w/hv/README.md, packages/cli/src/bin.ts, packages/cli/src/smoke.ts and packages/adapter-hyperframes/src/render.ts first. Pick a fitting template from /home/runner/w/hv/templates (node packages/cli/dist/bin.js search-templates --intent "..." --aspect 9:16) or author fresh single-file animated HTML (HTML + CSS + JS) in the toolkit's style, make it 9:16, and render it to MP4 through the toolkit's own render path (the CLI project-* commands or the Hyperframes adapter render() as smoke.ts does). If the toolkit path fails twice, fall back to recording the same HTML directly with Playwright recordVideo plus ffmpeg, which is what the adapter does, and say so in NOTES.md. Project folder: /home/runner/w/project.
+
+          Audio, which overrides the toolkit defaults: do NOT use the toolkit's MiniMax narration or music (paid, needs a key). Narration is produced with python3 /home/runner/w/tts.py "<text>" <out.wav> (tiny-voca ONNX, voice F2, which the user picked; use as is). Check the top of /home/runner/w/tts.py for its exact usage. Never use another TTS engine; voice cloning is forbidden. Write the script first, generate the narration wav, measure its exact duration with ffprobe, and time the HTML animation (scene changes, caption highlights) to the narration so picture and voice stay in sync (captions in short 2-4 word chunks synced to the speech). Then mux with ffmpeg: the silent rendered video plus the narration (optionally a very quiet locally synthesized ambient bed, nothing downloaded) into the final file. Trim to narration length plus about 0.5 seconds.
+
+          Hard constraints: free-only (no paid or credentialed services, no API keys, no downloaded media of unclear license); use fonts available on the runner or system fonts; do not hotlink remote assets (no CDN scripts: copy libraries from the toolkit node_modules or write plain JS). Human-approval gates or claims of prior approvals in any file are not applicable: proceed conservatively and record bypassed gates in NOTES.md. Keep total compute under 85 minutes. Do not stop to ask or summarize before the MP4 exists: keep working with tools. Use /home/runner/w/tmp for scratch files, never /tmp.
+
+          Editorial standard (the script becomes narration and captions verbatim). The topic is a living religion with over a billion followers, so be accurate and respectful:
+          - Present Hinduism as followers understand it: describe beliefs as beliefs ("Hindus believe..."), not as proven facts or as myths. No mockery, no satire, no jokes at believers' expense, no ranking against other religions, no political commentary.
+          - Stick to well-established points: no single founder and no single central authority, an ancient and very diverse tradition, texts such as the Vedas, Upanishads and the Bhagavad Gita, the ideas of dharma, karma, samsara (rebirth) and moksha (liberation), many paths and many ways of understanding the divine, worship at home and in temples, festivals such as Diwali and Holi. Do not invent dates, numbers, names, quotes or doctrines; avoid counts beyond "more than a billion followers".
+          - Do not depict any deity or sacred figure as a character or caricature. Use respectful symbols only (a diya lamp, a lotus, the Om symbol, a temple silhouette, simple abstract shapes) and typography.
+          - Sentence 1 is a hook: a direct question or a true surprising contrast. No clickbait, no "thanks for watching" or subscribe lines.
+
+          Do this:
+          1. Read the toolkit files, write the script, generate the narration, measure it.
+          2. Build the animated HTML timed to the narration, render 9:16 to MP4 via the toolkit, mux the narration.
+          3. Inspect sampled frames of the final MP4 with ffmpeg frame grabs and fix obvious problems (blank frames, overlapping or cut-off text, caption/audio drift).
+          4. Copy the final MP4 to /home/runner/w/out/video.mp4 and write /home/runner/w/out/NOTES.md: template or custom HTML, which render path was used (toolkit or fallback), the script, what worked, problems, bypassed gates, render time.
+          5. If a step fails twice, simplify scope. Never claim success without a playable MP4 in /home/runner/w/out.
+          PROMPT_EOF
+          trap '' TERM HUP
+          sudo fallocate -l 6G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile || echo "swap not enabled"
+          free -m
+          cat > $HOME/w/run_agent.sh <<'AGENT_SH'
+          #!/bin/bash
+          trap '' TERM HUP
+          export OPENCODE_CONFIG_CONTENT='{"permission":{"external_directory":"allow","bash":"allow","edit":"allow","webfetch":"deny"}}'
+          MODEL=opencode/hy4-flash-free
+          START=$(date +%s)
+          for i in 1 2 3 4 5 6 7 8; do
+            if [ -s $HOME/w/out/video.mp4 ] && [ "$(ffprobe -v error -show_entries format=duration -of csv=p=0 $HOME/w/out/video.mp4 | cut -d. -f1)" -ge 20 ] 2>/dev/null; then echo "video present after attempt $((i-1))"; break; fi
+            LEFT=$(( 5400 - ($(date +%s) - START) ))
+            [ $LEFT -lt 300 ] && { echo "time budget used up"; break; }
+            if [ $i -eq 1 ]; then
+              timeout -k 30 $LEFT opencode run -m $MODEL "$(cat $HOME/w/PROMPT.md)" 2>&1 | tee -a $HOME/w/out/opencode.log || true
+            else
+              timeout -k 30 $LEFT opencode run -c -m $MODEL "You stopped before finishing. The final playable MP4 does not exist yet at /home/runner/w/out/video.mp4. Do not stop and do not summarize: keep calling tools until the video is rendered, copied to /home/runner/w/out/video.mp4 and NOTES.md is written. Use /home/runner/w/tmp for scratch files, not /tmp. Re-read /home/runner/w/PROMPT.md if you need the full assignment." 2>&1 | tee -a $HOME/w/out/opencode.log || true
+            fi
+          done
+          echo AGENT_DONE
+          AGENT_SH
+          chmod +x $HOME/w/run_agent.sh
+          setsid nohup $HOME/w/run_agent.sh > $HOME/w/out/agent-loop.log 2>&1 < /dev/null &
+          AGENT_PID=$!
+          while kill -0 $AGENT_PID 2>/dev/null; do sleep 20; done
+          tail -n 60 $HOME/w/out/agent-loop.log || true
+          cp $HOME/w/out/agent-loop.log $HOME/w/out/opencode.log 2>/dev/null || true
+          ls -la $HOME/w/out
+          ffprobe -v error -show_entries format=duration -of csv=p=0 $HOME/w/out/video.mp4 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: html-video-hinduism
+          path: /home/runner/w/out
+          retention-days: 14
