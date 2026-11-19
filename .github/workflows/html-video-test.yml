@@ -34,7 +34,7 @@ jobs:
           npm install -g pnpm@9
           pnpm install
           pnpm -r build
-          npx playwright install --with-deps chromium
+          (cd packages/adapter-hyperframes && pnpm exec playwright install --with-deps chromium)
           node packages/cli/dist/bin.js doctor || true
       - name: Cache pip + TTS models
         uses: actions/cache@v4
