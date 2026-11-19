@@ -158,6 +158,12 @@ jobs:
           3. Copy the final MP4 to /home/runner/w/out/video.mp4 and write /home/runner/w/out/NOTES.md: style, script, what worked, limits and approximations, bypassed gates, render time.
           4. If a step fails twice, simplify scope instead of retrying the same thing. Never claim success without a playable MP4 in /home/runner/w/out.
           PROMPT_EOF
+          trap '' TERM HUP
+          sudo fallocate -l 6G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile || echo "swap not enabled"
+          free -m
+          cat > $HOME/w/run_agent.sh <<'AGENT_SH'
+          #!/bin/bash
+          trap '' TERM HUP
           export OPENCODE_CONFIG_CONTENT='{"permission":{"external_directory":"allow","bash":"allow","edit":"allow","webfetch":"deny"}}'
           MODEL=opencode/deepseek-v4.1-flash-free
           START=$(date +%s)
@@ -166,11 +172,19 @@ jobs:
             LEFT=$(( 5400 - ($(date +%s) - START) ))
             [ $LEFT -lt 300 ] && { echo "time budget used up"; break; }
             if [ $i -eq 1 ]; then
-              timeout $LEFT opencode run -m $MODEL "$(cat $HOME/w/PROMPT.md)" 2>&1 | tee -a $HOME/w/out/opencode.log || true
+              timeout -k 30 $LEFT opencode run -m $MODEL "$(cat $HOME/w/PROMPT.md)" 2>&1 | tee -a $HOME/w/out/opencode.log || true
             else
-              timeout $LEFT opencode run -c -m $MODEL "You stopped before finishing. The final playable MP4 does not exist yet at /home/runner/w/out/video.mp4. Do not stop and do not summarize: keep calling tools until the video is rendered, copied to /home/runner/w/out/video.mp4 and NOTES.md is written. Use /home/runner/w/tmp for scratch files, not /tmp. Re-read /home/runner/w/PROMPT.md if you need the full assignment." 2>&1 | tee -a $HOME/w/out/opencode.log || true
+              timeout -k 30 $LEFT opencode run -c -m $MODEL "You stopped before finishing. The final playable MP4 does not exist yet at /home/runner/w/out/video.mp4. Do not stop and do not summarize: keep calling tools until the video is rendered, copied to /home/runner/w/out/video.mp4 and NOTES.md is written. Use /home/runner/w/tmp for scratch files, not /tmp. Re-read /home/runner/w/PROMPT.md if you need the full assignment." 2>&1 | tee -a $HOME/w/out/opencode.log || true
             fi
           done
+          echo AGENT_DONE
+          AGENT_SH
+          chmod +x $HOME/w/run_agent.sh
+          setsid nohup $HOME/w/run_agent.sh > $HOME/w/out/agent-loop.log 2>&1 < /dev/null &
+          AGENT_PID=$!
+          while kill -0 $AGENT_PID 2>/dev/null; do sleep 20; done
+          tail -n 60 $HOME/w/out/agent-loop.log || true
+          cp $HOME/w/out/agent-loop.log $HOME/w/out/opencode.log 2>/dev/null || true
           ls -la $HOME/w/out
           ffprobe -v error -show_entries format=duration -of csv=p=0 $HOME/w/out/video.mp4 || true
       - uses: actions/upload-artifact@v4
