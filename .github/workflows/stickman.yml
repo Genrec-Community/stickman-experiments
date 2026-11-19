@@ -1,0 +1,102 @@
+name: stickman-experiment
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'What the stickman video explains'
+        required: true
+        default: 'Why is the sky blue? The 60-second honest answer.'
+      style:
+        description: 'B1 minimal line art, B2 colorful hand-drawn, or B3 retro TV'
+        required: true
+        default: 'B1'
+      ratio:
+        description: '9:16 or 16:9'
+        required: true
+        default: '9:16'
+permissions:
+  contents: read
+concurrency:
+  group: stickman-experiment
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install system + media deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-core
+          npm install -g opencode-ai@1.19.6
+          mkdir -p $HOME/w/project $HOME/w/out
+      - name: Fetch the stickman-video-director skill
+        run: |
+          git clone --depth 1 https://github.com/kaomei/stickman-video-director $HOME/w/svd
+          cd $HOME/w/svd/skills/directing-stickman-videos
+          npm ci
+          node scripts/autopilot.mjs doctor || true
+      - name: Cache pip + Kokoro model
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            /home/runner/w/kokoro.onnx
+            /home/runner/w/voices.bin
+          key: stickman-kokoro-v1
+      - name: Prepare local narration route (Kokoro, free)
+        run: |
+          pip install kokoro-onnx==0.6.1 soundfile==0.14.0
+          cd $HOME/w
+          [ -s kokoro.onnx ] || curl -fsSL -o kokoro.onnx https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+          [ -s voices.bin ] || curl -fsSL -o voices.bin https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+          cat > $HOME/w/tts.py <<'TTS_PY'
+          import sys, soundfile as sf
+          from kokoro_onnx import Kokoro
+          k = Kokoro('/home/runner/w/kokoro.onnx', '/home/runner/w/voices.bin')
+          text, out = sys.argv[1], sys.argv[2]
+          voice = sys.argv[3] if len(sys.argv) > 3 else 'am_michael'
+          s, sr = k.create(text, voice=voice, speed=1.0, lang='en-us')
+          sf.write(out, s, sr)
+          print('wrote', out, len(s)/sr, 'seconds')
+          TTS_PY
+          python3 $HOME/w/tts.py 'Narration route check.' $HOME/w/out/tts-check.wav
+      - name: OpenCode directs and renders the stickman video (hy4-flash-free)
+        working-directory: /home/runner/w
+        env:
+          TOPIC: ${{ inputs.topic }}
+          STYLE: ${{ inputs.style }}
+          RATIO: ${{ inputs.ratio }}
+        run: |
+          cat > $HOME/w/PROMPT.md <<'PROMPT_EOF'
+          You are producing ONE experiment video with the installed Skill at /home/runner/w/svd/skills/directing-stickman-videos (read its SKILL.md, then the references it routes you to). Work non-interactively in this CI environment; ask no questions.
+
+          Assignment: a ~45-60 second stickman explainer, style ${STYLE}, native ratio ${RATIO}, English, on this topic: "${TOPIC}"
+
+          Hard constraints (these override any Skill suggestion):
+          - Free-only: no paid or credentialed services, no API keys, no browser-driven generation (no Google Flow), no external media downloads of unclear license.
+          - Use the B-Autopilot local renderer (scripts/autopilot.mjs and its runtime). Project folder: /home/runner/w/project (outside the Skill, as required).
+          - Narration TTS: the project's configured local route is `python3 /home/runner/w/tts.py "<text>" <out.wav> [voice]` (Kokoro, voices like am_michael / af_heart). Do not attempt other TTS providers.
+          - Music/SFX: only what the Skill can synthesize locally or its own bundled assets; skip anything needing downloads or licenses.
+          - Keep total runtime under 70 minutes of compute.
+
+          Do this:
+          1. Read SKILL.md and the autopilot + style references it requires for ${STYLE}. Run `node scripts/autopilot.mjs workflow --style ${STYLE} --ratio ${RATIO} --project /home/runner/w/project` if the reference says to.
+          2. Write a tight script (hook first line, honest claims only, no invented numbers), then produce narration with the local TTS route.
+          3. Build the project per the Skill's B workflow and render the final MP4 with the local renderer.
+          4. Copy the final MP4 to /home/runner/w/out/stickman.mp4 and write /home/runner/w/out/NOTES.md: style, ratio, script, what worked, what the renderer complained about, total render time.
+          5. If a step fails twice, simplify scope (shorter video, fewer scenes) rather than retrying the same thing. Never claim success without an actual playable MP4 in /home/runner/w/out.
+          PROMPT_EOF
+          timeout 4200 opencode run -m opencode/hy4-flash-free "$(cat $HOME/w/PROMPT.md)" 2>&1 | tee $HOME/w/out/opencode.log || echo "opencode exited non-zero or timed out"
+          ls -la $HOME/w/out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stickman-output
+          path: /home/runner/w/out
+          retention-days: 14
