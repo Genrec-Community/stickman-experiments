@@ -81,7 +81,7 @@ jobs:
           cat > $HOME/w/PROMPT.md <<'PROMPT_EOF'
           You are producing ONE experiment video with the installed Skill at /home/runner/w/svd/skills/directing-stickman-videos (read its SKILL.md, then the references it routes you to). Work non-interactively in this CI environment; ask no questions.
 
-          Assignment: a stickman explainer of about ${MINUTES} minute(s) when narrated at a natural pace (if ${MINUTES} is 1, aim 45-70 seconds), style ${STYLE}, native ratio ${RATIO}, English, on this topic: "${TOPIC}"
+          Assignment: a stickman explainer of about ${MINUTES} minute(s) when narrated at a natural pace (if ${MINUTES} is 1, target 45-58 seconds and never exceed 60 - this is a YouTube Short), style ${STYLE}, native ratio ${RATIO}, English, on this topic: "${TOPIC}"
 
           Hard constraints (these override any Skill suggestion):
           - Free-only: no paid or credentialed services, no API keys, no browser-driven generation (no Google Flow), no external media downloads of unclear license.
