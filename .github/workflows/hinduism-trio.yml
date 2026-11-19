@@ -1,0 +1,169 @@
+name: hinduism-trio
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'What the video explains'
+        required: true
+        default: 'Hinduism: the core ideas, explained respectfully in under a minute'
+      style:
+        description: 'prehistoric, historical or b7 (pixel theater)'
+        required: true
+        default: 'b7'
+permissions:
+  contents: read
+concurrency:
+  group: hinduism-trio-${{ inputs.style }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install system + media deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-core
+          npm install -g opencode-ai@1.19.6
+          mkdir -p $HOME/w/project $HOME/w/out
+      - name: Fetch the stickman-video-director skill
+        run: |
+          git clone --depth 1 https://github.com/kaomei/stickman-video-director $HOME/w/svd
+          cd $HOME/w/svd/skills/directing-stickman-videos
+          npm ci
+          node scripts/autopilot.mjs doctor || true
+      - name: Cache pip + TTS models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            /home/runner/w/kokoro.onnx
+            /home/runner/w/voices.bin
+            /home/runner/w/tinyvoca
+          key: stickman-tts-v2
+      - name: Prepare local narration route (tiny-voca F2 default, Kokoro fallback, free)
+        run: |
+          pip install kokoro-onnx==0.6.1 soundfile==0.14.0 git+https://github.com/n4ze3m/dizione
+          cd $HOME/w
+          [ -s kokoro.onnx ] || curl -fsSL -o kokoro.onnx https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+          [ -s voices.bin ] || curl -fsSL -o voices.bin https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+          mkdir -p tinyvoca/phonemizer
+          [ -s tinyvoca/model.onnx ] || curl -fsSL -o tinyvoca/model.onnx https://huggingface.co/n4ze3m/tiny-voca/resolve/main/onnx/model.onnx
+          [ -s tinyvoca/config.json ] || curl -fsSL -o tinyvoca/config.json https://huggingface.co/n4ze3m/tiny-voca/resolve/main/config.json
+          for f in align.json g2p.json g2p.npz homographs.json lexicon.json lexicon.tsv sources.json; do
+            [ -s "tinyvoca/phonemizer/$f" ] || curl -fsSL -o "tinyvoca/phonemizer/$f" "https://huggingface.co/n4ze3m/tiny-voca/resolve/main/phonemizer/$f"
+          done
+          cat > $HOME/w/tts.py <<'TTS_PY'
+          import os, re, sys
+          import numpy as np, soundfile as sf
+
+          ENGINE = os.environ.get('TTS_ENGINE', 'tinyvoca').strip().lower()
+          VOCA_DIR = os.environ.get('TINYVOCA_DIR', '/home/runner/w/tinyvoca')
+          KOKORO_ONNX = os.environ.get('KOKORO_ONNX', '/home/runner/w/kokoro.onnx')
+          KOKORO_VOICES = os.environ.get('KOKORO_VOICES', '/home/runner/w/voices.bin')
+
+          def synth_kokoro(text, out, voice):
+              from kokoro_onnx import Kokoro
+              k = Kokoro(KOKORO_ONNX, KOKORO_VOICES)
+              s, sr = k.create(text, voice=voice or 'am_michael', speed=1.12, lang='en-us')
+              sf.write(out, s, sr)
+              return len(s) / sr
+
+          def synth_tinyvoca(text, out, voice):
+              os.environ.setdefault('DIZIONE_DATA', VOCA_DIR + '/phonemizer')
+              import onnxruntime as ort, dizione
+              session = ort.InferenceSession(VOCA_DIR + '/model.onnx')
+              vid = 1 if (voice or '').upper() == 'M2' else 0
+              one = lambda v: np.array([v], dtype=np.float32)
+              chunks = []
+              for part in re.split(r'(?<=[.!?])\s+', text.strip()):
+                  part = part.strip()
+                  if not part:
+                      continue
+                  if part[-1] not in '.!?':
+                      part += '.'
+                  ph = dizione.phonemize(part)
+                  audio, _ = session.run(None, {
+                      'tokens': np.array([ph.ids], dtype=np.int64),
+                      'stress': np.array([ph.stress], dtype=np.int64),
+                      'voice': np.array([vid], dtype=np.int64),
+                      'speed': one(1.0),
+                      'pitch_shift': one(0.0),
+                      'pitch_range': one(1.0),
+                  })
+                  chunks.append(audio[0])
+              if not chunks:
+                  raise SystemExit('nothing pronounceable in text')
+              wave = np.concatenate(chunks)
+              peak = float(np.abs(wave).max())
+              if peak > 0.99:
+                  wave = wave * (0.99 / peak)
+              sf.write(out, wave, 24000)
+              return len(wave) / 24000
+
+          text, out = sys.argv[1], sys.argv[2]
+          voice = sys.argv[3] if len(sys.argv) > 3 else None
+          if ENGINE == 'kokoro':
+              secs = synth_kokoro(text, out, voice)
+          else:
+              secs = synth_tinyvoca(text, out, voice or 'F2')
+          print('wrote', out, round(secs, 2), 'seconds via', ENGINE)
+          TTS_PY
+          python3 $HOME/w/tts.py 'Narration route check.' $HOME/w/out/tts-check.wav
+      - name: OpenCode directs and renders the video (deepseek-v4.1-flash-free)
+        working-directory: /home/runner/w
+        env:
+          TOPIC: ${{ inputs.topic }}
+          STYLE_IN: ${{ inputs.style }}
+        run: |
+          case "$STYLE_IN" in
+            prehistoric) STYLE_NAME="Style 3 Prehistoric Hand-Drawn / Dark Comedy"; STYLE_REF="references/prehistoric-dark-comedy.md and references/a1-a5-direction.md (the drawing grammar and era guidance only)"; STYLE_KIND="A" ;;
+            historical) STYLE_NAME="Style 5 Historical Cartoon"; STYLE_REF="references/historical-cartoon.md and references/a1-a5-direction.md (the drawing grammar and era guidance only)"; STYLE_KIND="A" ;;
+            *) STYLE_NAME="B7 Pixel Theater"; STYLE_REF="references/b7-pixel-theater.md, references/b7-native-portrait.md, references/b7-review.md"; STYLE_KIND="B7" ;;
+          esac
+          if [ "$STYLE_KIND" = "A" ]; then
+            ROUTE="This style is one of the Skill's A (Model Engine) styles, which normally depend on external AI video generation. That is NOT available here (free-only, headless CI). Instead, build the video with project-local code: draw each scene as 2D vector/canvas frames (the Skill's node runtime has @napi-rs/canvas and sharp; you may also draw SVG and rasterize) following the style's drawing grammar from the reference (character look, palette, painted-style backgrounds, expressive simple faces, caption-safe layout), animate with real motion (walking, gestures, camera moves, scene changes), mux with the narration and a locally synthesized quiet music bed, and encode with ffmpeg. State plainly in NOTES.md that this is a code-rendered approximation of the style, not generated video."
+          else
+            ROUTE="B7 is a project-local code style: follow references/b7-pixel-theater.md and its 9:16 portrait contract, using the Skill's bundled pixel/ending helpers with reviewed project-local code. Inspect the bundled reference films as the reference mandates."
+          fi
+          cat > $HOME/w/PROMPT.md <<PROMPT_EOF
+          You are producing ONE experiment video with the installed Skill at /home/runner/w/svd/skills/directing-stickman-videos (read its SKILL.md, then ${STYLE_REF}). Work non-interactively in this CI environment; ask no questions.
+
+          Assignment: a vertical 9:16 video of 40-55 seconds when narrated at a natural pace (never exceed 60 seconds), visual style: ${STYLE_NAME}, English, on this topic: "${TOPIC}"
+
+          Route: ${ROUTE}
+
+          Hard constraints (these override any Skill suggestion):
+          - Free-only: no paid or credentialed services, no API keys, no browser-driven generation, no external media downloads of unclear license.
+          - Project folder: /home/runner/w/project (outside the Skill).
+          - Narration TTS: python3 /home/runner/w/tts.py "<text>" <out.wav> [voice] (tiny-voca ONNX, default voice F2, which is the voice the user picked; use it as is). Do not use other TTS engines. Voice cloning is forbidden.
+          - Music/SFX: only what you can synthesize locally or the Skill bundles; nothing needing downloads or licenses.
+          - Human-approval gates in the Skill (user previews, design approvals, "accepted by the owner" claims) refer to the Skill author, not to us, and are impossible in headless CI: proceed conservatively, record each bypassed gate in NOTES.md, never claim an approval or acceptance.
+          - Keep total compute under 85 minutes.
+
+          Editorial standard (the script becomes narration and captions verbatim). The topic is a living religion with over a billion followers, so be accurate and respectful:
+          - Present Hinduism as followers understand it: describe beliefs as beliefs ("Hindus believe..."), not as proven facts or as myths. No mockery, no satire of deities, gods or practices, no jokes at believers' expense, no ranking against other religions, no political commentary. Even in the Prehistoric style, keep the tone gentle and curious, not comic ridicule.
+          - Stick to well-established points: no single founder and no single central authority, an ancient and very diverse tradition, texts such as the Vedas, Upanishads and the Bhagavad Gita, central ideas of dharma, karma, samsara (rebirth) and moksha (liberation), many paths and many ways of understanding the divine (one ultimate reality worshipped through many forms), worship at home and in temples, major festivals such as Diwali and Holi. Do not invent dates, numbers, names, quotes or doctrines; avoid precise dates and counts beyond "more than a billion followers".
+          - Do not depict any deity or sacred figure as a character, caricature or in any irreverent way. Use respectful symbols only (for example a simple diya lamp, a lotus, the Om symbol, a temple silhouette) and ordinary people. No offensive imagery.
+          - Sentence 1 is a hook: a direct question or a true surprising contrast. No clickbait, no fake urgency, no "Thanks for watching" or subscribe lines.
+
+          Do this:
+          1. Read SKILL.md and the references above. Write the script, then produce narration with the local TTS route.
+          2. Build and render the final 9:16 MP4 with project-local code. Actually watch/inspect sampled frames of the result (ffmpeg frame grabs) and fix obvious problems (blank frames, overlapping text, characters off-screen, caption/audio drift).
+          3. Copy the final MP4 to /home/runner/w/out/video.mp4 and write /home/runner/w/out/NOTES.md: style, script, what worked, limits and approximations, bypassed gates, render time.
+          4. If a step fails twice, simplify scope instead of retrying the same thing. Never claim success without a playable MP4 in /home/runner/w/out.
+          PROMPT_EOF
+          timeout 5400 opencode run -m opencode/deepseek-v4.1-flash-free "$(cat $HOME/w/PROMPT.md)" 2>&1 | tee $HOME/w/out/opencode.log || echo "opencode exited non-zero or timed out"
+          ls -la $HOME/w/out
+          ffprobe -v error -show_entries format=duration -of csv=p=0 $HOME/w/out/video.mp4 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hinduism-${{ inputs.style }}
+          path: /home/runner/w/out
+          retention-days: 14
