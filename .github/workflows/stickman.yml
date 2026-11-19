@@ -14,6 +14,10 @@ on:
         description: '9:16 or 16:9'
         required: true
         default: '9:16'
+      minutes:
+        description: 'Target length in minutes (1 = short sample, 3+ = long-form)'
+        required: true
+        default: '1'
 permissions:
   contents: read
 concurrency:
@@ -22,7 +26,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 100
+    timeout-minutes: 180
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -72,18 +76,19 @@ jobs:
           TOPIC: ${{ inputs.topic }}
           STYLE: ${{ inputs.style }}
           RATIO: ${{ inputs.ratio }}
+          MINUTES: ${{ inputs.minutes }}
         run: |
           cat > $HOME/w/PROMPT.md <<'PROMPT_EOF'
           You are producing ONE experiment video with the installed Skill at /home/runner/w/svd/skills/directing-stickman-videos (read its SKILL.md, then the references it routes you to). Work non-interactively in this CI environment; ask no questions.
 
-          Assignment: a ~45-60 second stickman explainer, style ${STYLE}, native ratio ${RATIO}, English, on this topic: "${TOPIC}"
+          Assignment: a stickman explainer of about ${MINUTES} minute(s) when narrated at a natural pace (if ${MINUTES} is 1, aim 45-70 seconds), style ${STYLE}, native ratio ${RATIO}, English, on this topic: "${TOPIC}"
 
           Hard constraints (these override any Skill suggestion):
           - Free-only: no paid or credentialed services, no API keys, no browser-driven generation (no Google Flow), no external media downloads of unclear license.
           - Use the B-Autopilot local renderer (scripts/autopilot.mjs and its runtime). Project folder: /home/runner/w/project (outside the Skill, as required).
           - Narration TTS: the project's configured local route is `python3 /home/runner/w/tts.py "<text>" <out.wav> [voice]` (Kokoro, voices like am_michael / af_heart). Do not attempt other TTS providers.
           - Music/SFX: only what the Skill can synthesize locally or its own bundled assets; skip anything needing downloads or licenses.
-          - Keep total runtime under 70 minutes of compute.
+          - Keep total runtime under 150 minutes of compute.
 
           Do this:
           1. Read SKILL.md and the autopilot + style references it requires for ${STYLE}. Run `node scripts/autopilot.mjs workflow --style ${STYLE} --ratio ${RATIO} --project /home/runner/w/project` if the reference says to.
@@ -92,7 +97,7 @@ jobs:
           4. Copy the final MP4 to /home/runner/w/out/stickman.mp4 and write /home/runner/w/out/NOTES.md: style, ratio, script, what worked, what the renderer complained about, total render time.
           5. If a step fails twice, simplify scope (shorter video, fewer scenes) rather than retrying the same thing. Never claim success without an actual playable MP4 in /home/runner/w/out.
           PROMPT_EOF
-          timeout 4200 opencode run -m opencode/hy4-flash-free "$(cat $HOME/w/PROMPT.md)" 2>&1 | tee $HOME/w/out/opencode.log || echo "opencode exited non-zero or timed out"
+          timeout 8400 opencode run -m opencode/hy4-flash-free "$(cat $HOME/w/PROMPT.md)" 2>&1 | tee $HOME/w/out/opencode.log || echo "opencode exited non-zero or timed out"
           ls -la $HOME/w/out
       - uses: actions/upload-artifact@v4
         if: always()
