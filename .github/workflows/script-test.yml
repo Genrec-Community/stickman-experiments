@@ -1,0 +1,166 @@
+name: script-test
+on:
+  workflow_dispatch:
+    inputs:
+      topics:
+        description: 'Topics, separated by ||'
+        required: true
+        default: 'Hedonism||Why do we yawn and why is it contagious?||How many ways can you shuffle a deck of 52 cards?'
+permissions:
+  contents: read
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        env:
+          TOPICS: ${{ inputs.topics }}
+        run: |
+          python3 - <<'PY' >> $GITHUB_OUTPUT
+          import json, os
+          print('matrix=' + json.dumps({'topic': [t.strip() for t in os.environ['TOPICS'].split('||') if t.strip()]}))
+          PY
+  script:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    env:
+      TOPIC: ${{ matrix.topic }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Genrec-Community/youtube-shorts-automation
+          path: prod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Set up dirs and OpenCode
+        run: |
+          npm install -g opencode-ai@1.19.6
+          mkdir -p $HOME/w/out $HOME/w/tmp
+          cp skills/things-explained-scriptwriter/SKILL.md $HOME/w/SKILL.md
+          cp prod/framework.md $HOME/w/framework.md
+      - name: Script agent (DeepSeek free) writes the script, then deterministic gate with up to 3 attempts
+        run: |
+          cat > $HOME/w/gate.py <<'GATE_PY'
+          import json, re, sys
+          p = sys.argv[1]
+          fails = []
+          try:
+              d = json.load(open(p))
+              a = d['part_a']; b = d['part_b']
+          except Exception as e:
+              print('FAIL: script.json missing or not valid JSON with part_a and part_b (%s)' % e); sys.exit(1)
+          words = re.findall(r"[A-Za-z0-9']+", a)
+          n = len(words)
+          if not 130 <= n <= 155: fails.append('word count %d, need 130-155' % n)
+          sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', a.strip()) if s.strip()]
+          first = sents[0] if sents else ''
+          fw = first.lower().split()
+          tc = [w.lower() for w in re.findall(r'[A-Za-z]+', str(b.get('title_card', '')))]
+          if tc and all(w in fw[:4] for w in tc[:2]): fails.append('opens by announcing the title/topic name')
+          if re.match(r"(?i)^(did you know|here is why|here's why|today|in this video)", first): fails.append('banned opener')
+          for ph in ["and that's why", "that's the honest answer", "thanks for watching", "follow for more", "subscribe", "in conclusion", "so remember"]:
+              if ph in a.lower(): fails.append('banned phrase: ' + ph)
+          long_s = [s for s in sents if len(s.split()) > 20]
+          if len(long_s) > 2: fails.append('%d sentences over 20 words' % len(long_s))
+          if len(re.findall(r"\b\w+'(s|t|re|ve|ll|d)\b", a)) < 3: fails.append('fewer than 3 contractions')
+          if len(re.findall(r'[\u2014:]', a)) < 2: fails.append('fewer than 2 em-dash/colon pauses before twists')
+          styles = ['Classic Imagine', 'Present-Tense Drop', 'High-Stakes What If', 'Sensory Glitch']
+          if b.get('opening_style') not in styles: fails.append('opening_style not one of the 4 allowed')
+          beats = b.get('beats') or []
+          if len(beats) < 4: fails.append('fewer than 4 beats')
+          else:
+              bw = sum(len(re.findall(r"[A-Za-z0-9']+", x.get('narration', ''))) for x in beats)
+              if abs(bw - n) > max(6, n * 0.06): fails.append('beat narration (%d words) does not match part_a (%d words)' % (bw, n))
+              if not all(x.get('visual_cue') for x in beats): fails.append('a beat has no visual_cue')
+          if not b.get('loop_check'): fails.append('no loop_check')
+          else:
+              last6 = ' '.join(words[-6:]); first6 = ' '.join(words[:6])
+              print('loop: ... %s | %s ...' % (last6, first6))
+          if re.search(r'\b(let me know|click|like and|link in)\b', a.lower()): fails.append('call to action wording')
+          print('words', n, 'est_sec_at_175wpm', round(n / 175 * 60, 1))
+          if fails:
+              print('FAIL: ' + ' ; '.join(fails)); sys.exit(1)
+          print('GATE PASS')
+          GATE_PY
+          cat > $HOME/w/PROMPT.md <<PROMPT_EOF
+          You are the SCRIPT AGENT for a short YouTube explainer channel. Work non-interactively. Read /home/runner/w/SKILL.md fully: it is your scriptwriting skill and its structure, style and output format are binding. Also read /home/runner/w/framework.md for background only; where it conflicts with SKILL.md, SKILL.md wins.
+          Topic: "${TOPIC}"
+          Honesty overrides that win over the skill where they conflict: every factual claim must be true and widely supported; never invent studies, names, numbers or quotes; for contested or single-study claims keep a few words of qualification; describe religious or cultural beliefs as beliefs with respect and never mock a faith; give no medical advice or self-experiment instructions.
+          Output: write ONE file, /home/runner/w/out/script.json, strictly valid JSON with exactly two keys. part_a is the string of the narration text (Part A, nothing else). part_b is the Part B JSON object exactly in the skill's schema. Use /home/runner/w/tmp for scratch files. Do not render video, do not call any other tool or service, and stop once script.json is written.
+          PROMPT_EOF
+          export OPENCODE_CONFIG_CONTENT='{"permission":{"external_directory":"allow","bash":"allow","edit":"allow","webfetch":"deny"}}'
+          cd $HOME/w
+          rm -f out/script.json
+          timeout 600 opencode run -m opencode/deepseek-v4.1-flash-free "$(cat PROMPT.md)" 2>&1 | tee -a out/opencode.log || true
+          for i in 1 2 3; do
+            python3 gate.py out/script.json | tee out/gate_$i.txt && break
+            [ $i -eq 3 ] && break
+            FAILS=$(tail -n 2 out/gate_$i.txt | tr '\n' ' ')
+            timeout 480 opencode run -c -m opencode/deepseek-v4.1-flash-free "Your script.json failed the automatic gate: $FAILS Rewrite /home/runner/w/out/script.json fixing exactly these problems, keep it valid JSON with part_a and part_b, keep the same topic and honesty rules, and stop when written." 2>&1 | tee -a out/opencode.log || true
+          done
+          python3 gate.py out/script.json > out/final_gate.txt || true
+          { echo "### Script test: $TOPIC"; echo; cat out/final_gate.txt; echo; python3 -c "import json;d=json.load(open('out/script.json'));print(d['part_a'])" 2>/dev/null; } >> $GITHUB_STEP_SUMMARY || true
+      - name: Cache pip + tiny-voca
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            /home/runner/w/tinyvoca
+          key: script-test-tts-v1
+      - name: Measure real tiny-voca pace and dash handling
+        continue-on-error: true
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install soundfile==0.14.0 git+https://github.com/n4ze3m/dizione onnxruntime numpy
+          cd $HOME/w
+          mkdir -p tinyvoca/phonemizer
+          [ -s tinyvoca/model.onnx ] || curl -fsSL -o tinyvoca/model.onnx https://huggingface.co/n4ze3m/tiny-voca/resolve/main/onnx/model.onnx
+          [ -s tinyvoca/config.json ] || curl -fsSL -o tinyvoca/config.json https://huggingface.co/n4ze3m/tiny-voca/resolve/main/config.json
+          for f in align.json g2p.json g2p.npz homographs.json lexicon.json lexicon.tsv sources.json; do
+            [ -s "tinyvoca/phonemizer/$f" ] || curl -fsSL -o "tinyvoca/phonemizer/$f" "https://huggingface.co/n4ze3m/tiny-voca/resolve/main/phonemizer/$f"
+          done
+          python3 - <<'EX'
+          import re
+          s = open('/home/runner/work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/prod/.github/workflows/stickman-shorts.yml').read()
+          m = re.search(r"cat > \$HOME/w/tts.py <<'TTS_PY'\n(.*?)\n\s*TTS_PY\n", s, re.S)
+          lines = m.group(1).split('\n')
+          pad = len(lines[0]) - len(lines[0].lstrip())
+          open('/home/runner/w/tts.py', 'w').write('\n'.join(l[pad:] for l in lines) + '\n')
+          EX
+          cat > $HOME/w/tts_measure.py <<'MEAS_PY'
+          import json, os, re, subprocess, sys, tempfile
+          import soundfile as sf
+          d = json.load(open(sys.argv[1]))
+          text = d['part_a']
+          n = len(re.findall(r"[A-Za-z0-9']+", text))
+          out = '/home/runner/w/out/narration.wav'
+          subprocess.run(['python3', '/home/runner/w/tts.py', text, out, 'F2'], check=True)
+          raw = os.path.join(tempfile.gettempdir(), 'raw_tts.wav')
+          rs = sf.info(raw).duration if os.path.exists(raw) else None
+          fs = sf.info(out).duration
+          res = {'words': n, 'raw_seconds': rs, 'filtered_seconds': fs,
+                 'raw_wpm': round(n / rs * 60) if rs else None, 'filtered_wpm': round(n / fs * 60),
+                 'dash_or_colon_count': len(re.findall(r'[\u2014:]', text))}
+          # does a dash change the audio? compare synth of same sentence with and without dash
+          open('/home/runner/w/out/tts_measure.json', 'w').write(json.dumps(res, indent=1))
+          print(json.dumps(res))
+          MEAS_PY
+          python3 tts_measure.py out/script.json | tee out/tts_summary.txt
+          { echo; echo 'TTS measure:'; cat out/tts_summary.txt; } >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: script-${{ strategy.job-index }}
+          path: /home/runner/w/out
+          retention-days: 14
