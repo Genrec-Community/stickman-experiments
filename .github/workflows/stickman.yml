@@ -7,7 +7,7 @@ on:
         required: true
         default: 'Why is the sky blue? The 60-second honest answer.'
       style:
-        description: 'B1 minimal line art, B2 colorful hand-drawn, or B3 retro TV'
+        description: 'B1 minimal line art, B2 colorful hand-drawn, B3 retro TV, or B5 animated character explainer'
         required: true
         default: 'B1'
       ratio:
@@ -89,6 +89,8 @@ jobs:
           - Narration TTS: the project's configured local route is `python3 /home/runner/w/tts.py "<text>" <out.wav> [voice]` (Kokoro, voices like am_michael / af_heart). Do not attempt other TTS providers.
           - Music/SFX: only what the Skill can synthesize locally or its own bundled assets; skip anything needing downloads or licenses.
           - Keep total runtime under 150 minutes of compute.
+          - Human-approval gates: where the Skill requires a human preview or design approval that is impossible in this headless CI, proceed with the most conservative choice and record exactly which gates were bypassed in NOTES.md; never fabricate an approval or acceptance.
+          - For B5 (animated character explainer): the presenter must be a simple original geometric character authored as local SVG (no real people, no likenesses, no image-generation services); follow the style's mandatory references and first-preview recipe, and keep the left-stage stickman action genuinely animated per its action contract.
 
           Do this:
           1. Read SKILL.md and the autopilot + style references it requires for ${STYLE}. Run `node scripts/autopilot.mjs workflow --style ${STYLE} --ratio ${RATIO} --project /home/runner/w/project` if the reference says to.
