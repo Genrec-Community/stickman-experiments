@@ -12,7 +12,7 @@ jobs:
           python-version: '3.11'
       - name: Install deps
         run: |
-          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
           pip install qwen-tts soundfile
       - name: Run CPU timing test
         run: python experiments/qwen3-tts-0.6b/cpu_test.py
