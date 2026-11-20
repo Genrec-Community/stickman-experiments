@@ -1,0 +1,49 @@
+name: edge-test
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  edge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Run edge-tts 5 trials with up to 8 attempts each
+        run: |
+          pip install edge-tts
+          mkdir -p $HOME/out
+          cat > $HOME/h.txt <<'TXT_EOF'
+          You finally buy the thing you've wanted for months— and for a week, it's great. Then it's just your thing, sitting there like furniture. The shine wears off, and you're already browsing for more. So you chase the next upgrade, the next hit, the next weekend. Philosophers have a word for the idea that pleasure is the highest good: hedonism. But here's the catch. Epicurus, the ancient Greek often linked to hedonism, argued that once you remove the pain of wanting, extra luxury doesn't add pleasure. It only varies it. Modern research on hedonic adaptation suggests something similar: we adjust to good things, and the lift fades faster than we expect. So the treadmill isn't a willpower failure— it's the design. The wanting comes back, and the next shiny thing is waiting.
+          TXT_EOF
+          cat > $HOME/edge_trial.py <<'PY_EOF'
+          import asyncio, edge_tts, json, time, os
+          TEXT = open('/home/runner/h.txt').read().strip()
+          res = []
+          for trial in range(5):
+              tries = 0; ok = False; err = ''
+              t0 = time.time()
+              for i in range(8):
+                  tries += 1
+                  try:
+                      asyncio.run(edge_tts.Communicate(TEXT, 'en-US-AndrewMultilingualNeural', rate='+12%').save('/home/runner/out/edge_%d.mp3' % trial))
+                      if os.path.getsize('/home/runner/out/edge_%d.mp3' % trial) > 10000:
+                          ok = True; break
+                  except Exception as e:
+                      err = type(e).__name__ + ': ' + str(e)[:120]
+                      time.sleep(3)
+              res.append({'trial': trial, 'ok': ok, 'attempts': tries, 'seconds': round(time.time() - t0, 1), 'last_error': '' if ok else err})
+              print(res[-1], flush=True)
+          json.dump(res, open('/home/runner/out/edge_result.json', 'w'), indent=1)
+          print('TRIALS OK', sum(r['ok'] for r in res), 'of', len(res), '; total attempts', sum(r['attempts'] for r in res))
+          PY_EOF
+          python3 $HOME/edge_trial.py | tee $HOME/out/log.txt
+          { echo '### edge-tts runner test'; tail -n 1 $HOME/out/log.txt; } >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: edge-out
+          path: /home/runner/out
+          retention-days: 7
