@@ -1,0 +1,249 @@
+name: skill-samples
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'What the sample videos explain'
+        required: true
+        default: 'Why we cannot fully reverse engineer GPU architectures'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: bang-motion
+            repo: bangtutorial/bang-motion
+            hint: "Output is a single self-contained index.html motion piece (cinematic motion graphics and kinetic typography, one of the skill's explainer styles). To turn it into video, serve the folder locally and capture it with headless Chromium using deterministic time stepping (see scripts/export-frames.mjs: it sets the timeline time, waits for paint, captures PNG frames; adapt it to 1080x1920 and to Playwright if puppeteer cannot download a browser), encode with ffmpeg, then mux the narration. Also keep the index.html in the output folder."
+          - key: huashu-art-motion
+            repo: alchaincyf/huashu-art-motion
+            hint: "The skill text is mostly Chinese; all on-screen text and narration must be English. Use its engine (scripts/engine, render.py with python playwright) and one art style from its style recipes that fits a technical explainer. The skill defaults to 1920x1080: render vertical 1080x1920 if the engine or your own canvas code allows it, otherwise say so in NOTES.md. Follow its storyboard and lint steps as far as possible and run its delivery gate if it works headless; record any gate you must bypass in NOTES.md."
+          - key: claude-drawing-skill
+            repo: cloveric/claude-drawing-skill
+            hint: "Procedural illustration with numpy and Pillow, no image model. Pick ONE of its styles that suits a technical explainer (for example a sketchbook or blueprint-like style), draw 5 to 7 scenes with the skill's stroke-by-stroke draw-on effect, render frames at 1080x1920 and encode with ffmpeg, add large readable captions, then mux the narration."
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install system + media deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-cjk
+          sudo fallocate -l 6G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile || echo 'swap not enabled'
+          npm install -g opencode-ai@1.19.6
+          pip install uv playwright numpy pillow
+          python3 -m playwright install --with-deps chromium
+          mkdir -p $HOME/w/project $HOME/w/out $HOME/w/tmp
+          echo "start $(date +%s)" > $HOME/w/out/timing.txt
+      - name: Fetch the skill
+        run: |
+          git clone --depth 1 https://github.com/${{ matrix.repo }} $HOME/w/skill
+          ls $HOME/w/skill
+      - name: Cache pip + TTS models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            /home/runner/w/kokoro.onnx
+            /home/runner/w/voices.bin
+            /home/runner/w/tinyvoca
+          key: stickman-tts-v2
+      - name: Prepare Kokoro narration route (free)
+        run: |
+          pip install kokoro-onnx==0.6.1 soundfile==0.14.0 edge-tts git+https://github.com/n4ze3m/dizione
+          cd $HOME/w
+          [ -s kokoro.onnx ] || curl -fsSL -o kokoro.onnx https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+          [ -s voices.bin ] || curl -fsSL -o voices.bin https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+          mkdir -p tinyvoca/phonemizer
+          [ -s tinyvoca/model.onnx ] || curl -fsSL -o tinyvoca/model.onnx https://huggingface.co/n4ze3m/tiny-voca/resolve/main/onnx/model.onnx
+          [ -s tinyvoca/config.json ] || curl -fsSL -o tinyvoca/config.json https://huggingface.co/n4ze3m/tiny-voca/resolve/main/config.json
+          for f in align.json g2p.json g2p.npz homographs.json lexicon.json lexicon.tsv sources.json; do
+            [ -s "tinyvoca/phonemizer/$f" ] || curl -fsSL -o "tinyvoca/phonemizer/$f" "https://huggingface.co/n4ze3m/tiny-voca/resolve/main/phonemizer/$f"
+          done
+          cat > $HOME/w/tts.py <<'TTS_PY'
+          import os, re, sys
+          import numpy as np, soundfile as sf
+
+          ENGINE = os.environ.get('TTS_ENGINE', 'kokoro').strip().lower()
+          VOCA_DIR = os.environ.get('TINYVOCA_DIR', '/home/runner/w/tinyvoca')
+          KOKORO_ONNX = os.environ.get('KOKORO_ONNX', '/home/runner/w/kokoro.onnx')
+          KOKORO_VOICES = os.environ.get('KOKORO_VOICES', '/home/runner/w/voices.bin')
+
+          def synth_kokoro(text, out, voice):
+              from kokoro_onnx import Kokoro
+              k = Kokoro(KOKORO_ONNX, KOKORO_VOICES)
+              s, sr = k.create(text, voice=voice or 'am_michael', speed=1.12, lang='en-us')
+              sf.write(out, s, sr)
+              return len(s) / sr
+
+          def synth_tinyvoca(text, out, voice):
+              os.environ.setdefault('DIZIONE_DATA', VOCA_DIR + '/phonemizer')
+              import onnxruntime as ort, dizione
+              session = ort.InferenceSession(VOCA_DIR + '/model.onnx')
+              vid = 1 if (voice or '').upper() == 'M2' else 0
+              one = lambda v: np.array([v], dtype=np.float32)
+              chunks = []
+              for part in re.split(r'(?<=[.!?])\s+', text.strip()):
+                  part = part.strip()
+                  if not part:
+                      continue
+                  if part[-1] not in '.!?':
+                      part += '.'
+                  ph = dizione.phonemize(part)
+                  audio, _ = session.run(None, {
+                      'tokens': np.array([ph.ids], dtype=np.int64),
+                      'stress': np.array([ph.stress], dtype=np.int64),
+                      'voice': np.array([vid], dtype=np.int64),
+                      'speed': one(1.0),
+                      'pitch_shift': one(0.0),
+                      'pitch_range': one(1.0),
+                  })
+                  chunks.append(audio[0])
+              if not chunks:
+                  raise SystemExit('nothing pronounceable in text')
+              wave = np.concatenate(chunks)
+              peak = float(np.abs(wave).max())
+              if peak > 0.99:
+                  wave = wave * (0.99 / peak)
+              sf.write(out, wave, 24000)
+              return len(wave) / 24000
+
+          def synth_edge(text, out):
+              import asyncio, time, subprocess, tempfile
+              import edge_tts
+              mp3 = os.path.join(tempfile.gettempdir(), 'edge_tts.mp3')
+              last = None
+              for _ in range(8):
+                  try:
+                      if os.path.exists(mp3):
+                          os.remove(mp3)
+                      asyncio.run(edge_tts.Communicate(text, 'en-US-AndrewMultilingualNeural', rate='+12%').save(mp3))
+                      if os.path.getsize(mp3) > 2000 and subprocess.run(['ffmpeg', '-y', '-v', 'error', '-i', mp3, '-ar', '24000', '-ac', '1', out]).returncode == 0:
+                          return sf.info(out).duration
+                  except Exception as e:
+                      last = e
+                  time.sleep(3)
+              raise RuntimeError('edge-tts gave no audio after 8 attempts: %s' % last)
+
+          text, out = sys.argv[1], sys.argv[2]
+          voice = sys.argv[3] if len(sys.argv) > 3 else None
+          used = ENGINE
+          if ENGINE == 'kokoro':
+              secs = synth_kokoro(text, out, voice)
+          elif ENGINE == 'edge':
+              try:
+                  secs = synth_edge(text, out)
+              except Exception as e:
+                  print('edge-tts failed, falling back to tiny-voca:', str(e)[:200])
+                  used = 'tinyvoca'
+                  secs = synth_tinyvoca(text, out, voice or 'F2')
+          else:
+              secs = synth_tinyvoca(text, out, voice or 'F2')
+          # Voice polish (user-requested): highpass, EQ, compressor, tighten pauses. Falls back to the raw narration if ffmpeg fails.
+          import subprocess, tempfile
+          VOICE_CHAIN = ('highpass=f=80,equalizer=f=140:t=q:w=1.2:g=3.5,equalizer=f=4500:t=q:w=1.5:g=2.5,'
+                         'acompressor=threshold=-18dB:ratio=3:attack=5:release=50,'
+                         'silenceremove=stop_periods=-1:stop_duration=0.12:stop_threshold=-45dB,alimiter=limit=0.95')
+          EDGE_CHAIN = VOICE_CHAIN.replace('stop_duration=0.12', 'stop_duration=0.35')
+          raw_tts = os.path.join(tempfile.gettempdir(), 'raw_tts.wav')
+          os.replace(out, raw_tts)
+          try:
+              ok = subprocess.run(['ffmpeg', '-y', '-v', 'error', '-i', raw_tts, '-af', (EDGE_CHAIN if used == 'edge' else VOICE_CHAIN), out]).returncode == 0 and sf.info(out).duration > 0.2
+          except Exception:
+              ok = False
+          if not ok:
+              print('voice filter failed, using raw narration')
+              os.replace(raw_tts, out)
+          secs = sf.info(out).duration
+          print('wrote', out, round(secs, 2), 'seconds via', used)
+          TTS_PY
+          python3 $HOME/w/tts.py 'Narration route check.' $HOME/w/out/tts-check.wav
+      - name: OpenCode builds the sample with the skill (deepseek-v4.1-flash-free)
+        working-directory: /home/runner/w
+        env:
+          TOPIC: ${{ inputs.topic }}
+          SKILL_KEY: ${{ matrix.key }}
+          SKILL_HINT: ${{ matrix.hint }}
+        run: |
+          cat > $HOME/w/PROMPT.md <<PROMPT_EOF
+          You are producing ONE sample vertical video with the installed agent skill "$SKILL_KEY" at /home/runner/w/skill (read its SKILL.md first, then the references it routes you to). This is a style sample for the channel owner to compare against other styles. Work non-interactively in this CI environment; ask no questions.
+
+          Assignment: a 9:16 portrait video of 40-55 seconds when narrated (120-150 words of narration), English, in the visual style of this skill, on this topic: "$TOPIC"
+
+          Skill-specific route: $SKILL_HINT
+
+          Hard constraints (these override any skill suggestion):
+          - Free-only: no paid or credentialed services, no API keys, no browser-driven generation, no external media downloads of unclear license. Do not hotlink remote assets or CDN scripts. Local npm or pip packages are fine.
+          - Narration: python3 /home/runner/w/tts.py "<text>" <out.wav> is the channel voice (Kokoro, free, already set up; do not pick a voice or engine, do not post-process it, use the measured duration of the returned wav for timing). Voice cloning is forbidden. No music downloads; synthesize a quiet bed locally or use none.
+          - Final video: exactly 1080x1920 if at all possible, 30 fps, H.264 + AAC, copied to /home/runner/w/out/video.mp4. Verify with ffprobe. Use /home/runner/w/tmp for scratch files, never /tmp.
+          - Human-approval gates in the skill that are impossible in headless CI: take the most conservative choice and record exactly which were bypassed in /home/runner/w/out/NOTES.md. Never fabricate an approval.
+          - Keep total compute under 90 minutes. Do not stop to ask or summarize before the MP4 exists.
+
+          Script and editorial standard (the script becomes narration and captions verbatim):
+          - Sentence 1 is a hook: a direct question or a true surprising contrast. Short sentences, plain words. No clickbait lies, no subscribe lines.
+          - Every claim must be true and widely supported; never invent studies, names, numbers or products. Prefer qualitative claims over exact figures you cannot verify.
+          - The honest framing of the topic: GPUs cannot be fully reverse engineered from outside, but people get surprisingly far. Reasons you may use if you are confident they are true: a modern GPU holds billions of transistors on a chip whose physical design you cannot see from software; vendors keep the instruction set, microarchitecture and firmware largely undocumented and protected as trade secrets and by licensing; firmware is often signed and closed; and what outsiders learn comes from microbenchmarking and from community driver projects such as Nouveau, Panfrost and the Asahi Linux GPU work. Give one concrete example of how outsiders probe a GPU (timing small test programs) and end on what that can and cannot reveal. No legal advice.
+
+          Do this:
+          1. Read the skill. Write the script, generate narration with tts.py, measure it.
+          2. Build the visuals in the skill's style, timed to the narration, with large readable captions.
+          3. Render and mux to /home/runner/w/out/video.mp4. Grab frames with ffmpeg and inspect them (look for blank frames, cut-off or overlapping text, caption and audio drift) and fix problems.
+          4. Write /home/runner/w/out/NOTES.md: what you did, the script, which parts of the skill worked or not, bypassed gates, render time.
+          5. If a step fails twice, simplify scope instead of retrying the same thing. Never claim success without a playable MP4.
+          PROMPT_EOF
+          cat > $HOME/w/run_agent.sh <<'AGENT_SH'
+          #!/bin/bash
+          trap '' TERM HUP
+          export OPENCODE_CONFIG_CONTENT='{"permission":{"external_directory":"allow","bash":"allow","edit":"allow","webfetch":"deny"}}'
+          MODEL=opencode/deepseek-v4.1-flash-free
+          START=$(date +%s)
+          # Stall watchdog: kill an attempt that shows no activity (opencode.log growth or file changes under w/) for STALL seconds, so a silent hang costs minutes, not the whole budget.
+          STALL=480
+          activity() { echo "$(stat -c %s $HOME/w/out/opencode.log 2>/dev/null) $(find $HOME/w -type f -not -name agent-loop.log -printf '%T@\n' 2>/dev/null | sort -n | tail -1)"; }
+          run_oc() {
+            local LIMIT=$1; shift
+            local AT=$(date +%s) LAST NOW CUR
+            "$@" 2>&1 | tee -a $HOME/w/out/opencode.log &
+            local PIPE=$!
+            LAST=$(activity); local LASTCHG=$(date +%s)
+            while kill -0 $PIPE 2>/dev/null; do
+              sleep 20; NOW=$(date +%s); CUR=$(activity)
+              if [ "$CUR" != "$LAST" ]; then LAST=$CUR; LASTCHG=$NOW; fi
+              if [ $((NOW-LASTCHG)) -ge $STALL ]; then echo "STALL: no activity for ${STALL}s, restarting agent"; echo stall >> $HOME/w/stalls.log; pkill -9 -f "opencode run" || true; break; fi
+              if [ $((NOW-AT)) -ge $LIMIT ]; then echo "attempt time limit"; pkill -9 -f "opencode run" || true; break; fi
+            done
+            wait $PIPE 2>/dev/null || true
+          }
+          for i in 1 2 3 4 5 6 7 8; do
+            if [ -s $HOME/w/out/video.mp4 ] && [ "$(ffprobe -v error -show_entries format=duration -of csv=p=0 $HOME/w/out/video.mp4 | cut -d. -f1)" -ge 20 ] 2>/dev/null; then echo "video present after attempt $((i-1))"; break; fi
+            [ "$(cat $HOME/w/stalls.log 2>/dev/null | wc -l)" -ge 3 ] && { echo "3 stalls: giving up fast instead of burning the budget"; break; }
+            LEFT=$(( 5700 - ($(date +%s) - START) ))
+            [ $LEFT -lt 300 ] && { echo "time budget used up"; break; }
+            if [ $i -eq 1 ]; then
+              run_oc $LEFT opencode run -m $MODEL "$(cat $HOME/w/PROMPT.md)"
+            else
+              run_oc $LEFT opencode run -c -m $MODEL "You stopped before finishing. The final playable MP4 does not exist yet at /home/runner/w/out/video.mp4. Do not stop and do not summarize: keep calling tools until the video is rendered at 1080x1920, copied to /home/runner/w/out/video.mp4, and NOTES.md is written. Use /home/runner/w/tmp for scratch files, not /tmp. Re-read /home/runner/w/PROMPT.md if you need the full assignment."
+            fi
+          done
+          echo AGENT_DONE
+          AGENT_SH
+          chmod +x $HOME/w/run_agent.sh
+          setsid nohup $HOME/w/run_agent.sh > $HOME/w/out/agent-loop.log 2>&1 < /dev/null &
+          AGENT_PID=$!
+          while kill -0 $AGENT_PID 2>/dev/null; do sleep 20; done
+          tail -n 40 $HOME/w/out/agent-loop.log || true
+          ls -la $HOME/w/out
+          ffprobe -v error -show_entries format=duration -of csv=p=0 $HOME/w/out/video.mp4 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sample-${{ matrix.key }}
+          path: /home/runner/w/out
+          retention-days: 14
+
