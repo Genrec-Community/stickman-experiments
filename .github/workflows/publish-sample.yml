@@ -1,0 +1,48 @@
+name: Publish huashu GPU sample into the repo
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy the sample video out of the run artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dl samples
+          gh run download 44780276025 -n sample-huashu-art-motion -D dl
+          V=$(find dl -name '*.mp4' -size +1M | head -1); echo "video: $V"; ls -l "$V"
+          cp "$V" samples/huashu-gpu.mp4
+          ffprobe -v error -show_entries stream=width,height,duration -of csv=p=0 samples/huashu-gpu.mp4 || true
+          cat > samples/huashu-gpu-metadata.json <<'META_EOF'
+          {
+            "title": "Can You Reverse Engineer a GPU?",
+            "titles": {
+              "option_a_curiosity": "Can You Reverse Engineer a GPU?",
+              "option_b_contrarian": "Why GPUs Stay a Black Box",
+              "option_c_search_hybrid": "GPU Architecture: What Timing Reveals"
+            },
+            "detected_concept": "GPU reverse engineering and microbenchmarking",
+            "primary_niche": "Science",
+            "description": "Can you really reverse engineer a GPU just by running code on it? Not fully. This short explains why GPU instruction sets, internals and firmware stay largely undocumented, and how outsiders still learn a surprising amount about GPU architecture.\n\nA modern GPU packs billions of transistors into a chip you never see. Its design is guarded as trade secrets, and much of its firmware is signed and closed. So researchers write tiny test programs and time them, watching where loads, stores and shaders slow down. Community projects like Nouveau, Panfrost and the Asahi Linux GPU work turn those clues into open drivers. Timing can map caches and bottlenecks, but it cannot show the transistor layout or the signed firmware.\n\nWould you rather know how a chip behaves, or how it is built?",
+            "hashtags": [
+              "shorts",
+              "gpu",
+              "computerscience",
+              "reverseengineering",
+              "technology"
+            ]
+          }
+          META_EOF
+          python3 -c "import json;json.load(open('samples/huashu-gpu-metadata.json'))"
+      - name: Commit
+        run: |
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git add samples/huashu-gpu.mp4 samples/huashu-gpu-metadata.json
+          git commit -m "Add huashu GPU sample for upload"
+          git push
+
