@@ -1,0 +1,18 @@
+{
+  "title": "Can You Reverse Engineer a GPU?",
+  "titles": {
+    "option_a_curiosity": "Can You Reverse Engineer a GPU?",
+    "option_b_contrarian": "Why GPUs Stay a Black Box",
+    "option_c_search_hybrid": "GPU Architecture: What Timing Reveals"
+  },
+  "detected_concept": "GPU reverse engineering and microbenchmarking",
+  "primary_niche": "Science",
+  "description": "Can you really reverse engineer a GPU just by running code on it? Not fully. This short explains why GPU instruction sets, internals and firmware stay largely undocumented, and how outsiders still learn a surprising amount about GPU architecture.\n\nA modern GPU packs billions of transistors into a chip you never see. Its design is guarded as trade secrets, and much of its firmware is signed and closed. So researchers write tiny test programs and time them, watching where loads, stores and shaders slow down. Community projects like Nouveau, Panfrost and the Asahi Linux GPU work turn those clues into open drivers. Timing can map caches and bottlenecks, but it cannot show the transistor layout or the signed firmware.\n\nWould you rather know how a chip behaves, or how it is built?",
+  "hashtags": [
+    "shorts",
+    "gpu",
+    "computerscience",
+    "reverseengineering",
+    "technology"
+  ]
+}
