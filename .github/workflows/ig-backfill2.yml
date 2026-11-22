@@ -1,0 +1,119 @@
+name: ig-backfill2
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Publish the remaining 8 Reels with 20 hashtags each, duplicate guard
+        shell: python
+        run: |
+          import os, json, time, urllib.request, urllib.parse, urllib.error
+          open("items.jsonl", "w").write(r"""
+          {"key": "digestion", "yt": "https://youtu.be/-aDSbTxMRzw", "title": "How Your Stomach Digests Food (Historical Cartoon)", "caption": "How Your Stomach Digests Food (Historical Cartoon)\n\nA short historical-cartoon journey through digestion: from the first bite, down the food pipe, into the stomach's acid bath, and through the intestines. See how muscles, acid, enzymes, bile, and villi turn bread into nutrients, and why your stomach is more like an assembly line than a storage bag.\n\n#digestion #humanbody #science #animation #biology #stomach #anatomy #digestivesystem #sciencefacts #howitworks #educational #learning #didyouknow #healthscience #gut #intestines #physiology #animatedexplainer #facts #knowledge"}
+          {"key": "hiccups", "yt": "https://youtu.be/hjY7rMqwxlU", "title": "Why Do We Hiccup? The Reflex Science, Explained", "caption": "Why Do We Hiccup? The Reflex Science, Explained\n\nNewborns hiccup before birth, sometimes for ten minutes at a stretch, yet the purpose of hiccups in adults remains unresolved. This short walks through the diaphragm-and-vocal-cord reflex, the burping hypothesis and the ancient gill-reflex idea without presenting either explanation as settled fact. No medical advice.\n\nMusic: \"Bit Quest\" Kevin MacLeod (incompetech.com). Licensed under Creative Commons: By Attribution 4.0 License. http://creativecommons.org/licenses/by/4.0/. Source: https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500073. Edits: excerpt, gain, fades, ducking, synchronized to picture.\n\n#hiccups #humanbody #science #pixelart #explained #diaphragm #reflex #anatomy #sciencefacts #educational #didyouknow #learning #physiology #medicalscience #pixelartanimation #animation #facts #knowledge #humanbiology #bodyfacts"}
+          {"key": "gpu", "yt": "https://youtu.be/J8EqkgwBRos", "title": "Can You Reverse Engineer a GPU?", "caption": "Can You Reverse Engineer a GPU?\n\nCan you really reverse engineer a GPU just by running code on it? Not fully. This short explains why GPU instruction sets, internals and firmware stay largely undocumented, and how outsiders still learn a surprising amount about GPU architecture.\n\nA modern GPU packs billions of transistors into a chip you never see. Its design is guarded as trade secrets, and much of its firmware is signed and closed. So researchers write tiny test programs and time them, watching where loads, stores and shaders slow down. Community projects like Nouveau, Panfrost and the Asahi Linux GPU work turn those clues into open drivers. Timing can map caches and bottlenecks, but it cannot show the transistor layout or the signed firmware.\n\nWould you rather know how a chip behaves, or how it is built?\n\n#gpu #computerscience #reverseengineering #technology #hardware #graphicscard #computerarchitecture #opensource #linux #programming #gpuarchitecture #tech #firmware #drivers #coding #engineering #explained #educational #learning #techfacts"}
+          {"key": "ocean", "yt": "https://youtu.be/55zsx4XKAPs", "title": "Why Is the Ocean Salty If Rain Is Fresh?", "caption": "Why Is the Ocean Salty If Rain Is Fresh?\n\nRain falls clean, yet the sea is about 3.5 percent salt, a puzzle hiding in plain sight. How does that fresh water become ocean salinity? Chemical weathering is the main route: slightly acidic rain dissolves mineral salts from soil and stone, rivers carry them to the coast, and seafloor hot springs add more. Once there, water evaporates back into the sky while salt stays behind, so the delivery accumulates over billions of years. This short follows one raindrop from hillside to shoreline and shows why the ocean concentrates what rivers release. It also covers the smaller seafloor source, so the explanation is not just about rivers. Next time rain lands on your tongue, you will notice the journey starting. What surprised you most about where ocean salt actually comes from?\n\n#ocean #geology #science #earthscience #explained #oceanscience #salt #chemistry #water #nature #sciencefacts #rain #seawater #hydrology #educational #learning #didyouknow #facts #knowledge #planetearth"}
+          {"key": "penny", "yt": "https://youtu.be/VNIR5_G9QcQ", "title": "Would You Take the Penny or $1 Million?", "caption": "Would You Take the Penny or $1 Million?\n\nOne million dollars today, or a single penny that doubles every day for thirty days. Which would you take?\n\nDay ten is just $5.12. Day twenty is over $5,000. By day thirty that one cent has grown past $5.3 million, more than five times the cash on offer. This short shows why. Exponential growth multiplies the whole pile every day instead of adding a fixed amount, and our brains expect straight lines, not curves. The Bauhaus-style animation walks through the doubling day by day, from one cent to the final day, so you can see exactly where intuition breaks.\n\nWould you trust your gut or the math?\n\n#math #exponentialgrowth #money #finance #explained #mathematics #mathfacts #numbers #exponential #doubling #educational #learning #didyouknow #facts #knowledge #moneymath #patterns #arithmetic #mathexplained #brainteaser"}
+          {"key": "doppler", "yt": "https://youtu.be/99JFtrt4r6w", "title": "Why Does a Siren Drop in Pitch as It Passes?", "caption": "Why Does a Siren Drop in Pitch as It Passes?\n\nA passing siren is an everyday demonstration of the Doppler effect. Motion squeezes sound waves ahead of the source and stretches them behind, changing the pitch that reaches your ear. This short explains why wave crests crowd together as a source approaches and spread apart as it recedes, and why the source's own note stays the same while the arriving waves change. It also shows how the same shift applies to light from moving stars and to Doppler radar. The animation uses a flat Bauhaus poster style with simple geometric shapes, so the focus stays on the spacing of the waves. The faster the source moves, the larger the shift, and the effect works for any wave. It is one of the clearest everyday examples of physics in motion. No physics background is needed. Have you ever noticed the pitch drop when an ambulance passes?\n\n#doppler #physics #sound #science #explained #soundwaves #waves #physicsfacts #acoustics #sciencefacts #dopplereffect #educational #learning #didyouknow #frequency #pitch #facts #knowledge #wavephysics #howitworks"}
+          {"key": "hinduism", "yt": "https://youtu.be/y-swP6tLDKI", "title": "Why Does Hinduism Have No Single Founder?", "caption": "Why Does Hinduism Have No Single Founder?\n\nWhat if one of the world's oldest living religions had no founder at all? This short explains how followers understand Hinduism, from its sacred texts to its festivals.\n\nHinduism has no single founder and no single central authority. It is an ancient, very diverse tradition with more than a billion followers, and its sacred texts include the Vedas, the Upanishads and the Bhagavad Gita. Hindus believe in dharma, the duty and right way of living, karma, the results of our actions, and samsara, the cycle of rebirth. The aim is moksha, liberation from that cycle. Many paths are honored, and people pray at home and in temples and celebrate festivals such as Diwali and Holi.\n\nWhich of these ideas, dharma, karma or moksha, was new to you?\n\n#hinduism #worldreligions #culture #history #explained #religion #dharma #karma #moksha #india #worldculture #educational #learning #didyouknow #spirituality #philosophy #traditions #festivals #diwali #holi"}
+          {"key": "bystander", "yt": "https://youtu.be/XyYtCUfCJ8E", "title": "Why Does Nobody Help in a Crowd?", "caption": "Why Does Nobody Help in a Crowd?\n\nPicture a crowded street where a man collapses, and fifty witnesses freeze as seconds stretch into silence. The bystander effect explains why a crowd can watch an emergency and still do nothing. Psychologists trace part of it to diffusion of responsibility: when many people witness the same event, each assumes someone else has already stepped in. That shared assumption turns a street full of good intentions into a quiet coordination failure, not because bystanders are cruel, but because the situation makes helping feel like someone else's job. The practical fix is to break the ambiguity with one visible signal: point at a specific person, name them, and give one clear task. If you saw someone collapse in a crowd, what would make you step forward first?\n\n#bystandereffect #psychology #socialpsychology #humanbehavior #explained #humanpsychology #socialbehavior #psychologyfacts #sciencefacts #educational #learning #didyouknow #behavior #sociology #diffusionofresponsibility #facts #knowledge #crowd #helping #awareness"}
+          """)
+
+          tok = os.environ["IG_ACCESS_TOKEN"]
+          G = "https://graph.facebook.com/v23.0"
+          TAG = "ig-backfill-45025642780"
+          REPO = os.environ["REPO"]
+          ITEMS = [json.loads(l) for l in open("items.jsonl") if l.strip()]
+          FATAL = {190, 102, 4, 17, 32, 613}
+          def call(method, path, data=None):
+              url = G + path
+              body = None
+              if method == "GET":
+                  url += ("&" if "?" in url else "?") + "access_token=" + urllib.parse.quote(tok)
+              else:
+                  d = dict(data or {}); d["access_token"] = tok
+                  body = urllib.parse.urlencode(d).encode()
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url, data=body, method=method), timeout=90) as r:
+                      return r.status, json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  try: b = json.loads(e.read().decode()).get("error", {})
+                  except Exception: b = {}
+                  return e.code, {"error": {"code": b.get("code"), "subcode": b.get("error_subcode"), "message": str(b.get("message", ""))[:300]}}
+              except Exception as e:
+                  return 0, {"error": {"code": None, "message": "transport: " + type(e).__name__}}
+          st, pages = call("GET", "/me/accounts?fields=name,instagram_business_account%7Bid,username%7D")
+          matches = [p["instagram_business_account"] for p in pages.get("data", []) if p.get("instagram_business_account", {}).get("username") == "things._.explained"]
+          print("account matches:", [m["id"] for m in matches])
+          if len(matches) != 1 or matches[0]["id"] != "17841471261243238":
+              raise SystemExit("ABORT: account check failed, nothing published")
+          uid = matches[0]["id"]
+          st, who = call("GET", "/%s?fields=username" % uid)
+          if who.get("username") != "things._.explained":
+              raise SystemExit("ABORT: username mismatch, nothing published")
+          def existing_titles():
+              st, r = call("GET", "/%s/media?fields=caption,permalink&limit=100" % uid)
+              if st != 200:
+                  return None, {}
+              d = {}
+              for m in r.get("data", []):
+                  first = (m.get("caption") or "").split("\n")[0].strip()
+                  d[first] = m.get("permalink")
+              return set(d), d
+          have, perma = existing_titles()
+          if have is None:
+              raise SystemExit("ABORT: cannot read account media for the duplicate check, nothing published")
+          print("existing posts on account:", len(have))
+          results = []
+          stop = None
+          for it in ITEMS:
+              k = it["key"]; res = {"key": k, "youtube": "https://youtu.be/" + it["yt"].split("/")[-1], "status": None}
+              results.append(res)
+              if stop:
+                  res["status"] = "not_attempted_" + stop; continue
+              cap = it["caption"]
+              assert "\u2014" not in cap and len(cap) <= 2200 and cap.count("#") == 20, k
+              if it["title"] in have:
+                  res["status"] = "skipped_already_on_account"; res["permalink"] = perma.get(it["title"]); continue
+              url = "https://github.com/%s/releases/download/%s/%s.mp4" % (REPO, TAG, k)
+              st, cont = call("POST", "/%s/media" % uid, {"media_type": "REELS", "video_url": url, "caption": cap, "share_to_feed": "true"})
+              print(k, "container:", st, json.dumps(cont)[:200])
+              cid = cont.get("id")
+              if not cid:
+                  res["status"] = "container_not_created"; res["error"] = cont.get("error")
+                  stop = "after_container_error_not_reduced"
+                  continue
+              status = ""
+              for _ in range(40):
+                  time.sleep(15)
+                  s, r = call("GET", "/%s?fields=status_code,status" % cid)
+                  status = r.get("status_code", "")
+                  if status in ("FINISHED", "ERROR", "EXPIRED"):
+                      print(k, "container status:", status, r.get("status", "")); break
+              if status != "FINISHED":
+                  res["status"] = "container_" + (status or "timeout") + "_not_published"; stop = "after_container_failure"; continue
+              st, pub = call("POST", "/%s/media_publish" % uid, {"creation_id": cid})
+              print(k, "publish:", st, json.dumps(pub)[:200])
+              mid = pub.get("id")
+              if mid:
+                  s, pl = call("GET", "/%s?fields=permalink,media_product_type" % mid)
+                  res["status"] = "published"; res["permalink"] = pl.get("permalink"); res["type"] = pl.get("media_product_type")
+                  have.add(it["title"])
+              else:
+                  res["status"] = "publish_outcome_unknown_not_retried"; res["error"] = pub.get("error")
+                  if (pub.get("error") or {}).get("code") in FATAL: stop = "after_fatal_error"
+              time.sleep(20)
+          # reconcile unknown outcomes against the account, no re-posting
+          have2, perma2 = existing_titles()
+          for it, res in zip(ITEMS, results):
+              if res["status"] == "publish_outcome_unknown_not_retried" and have2 is not None and it["title"] in have2:
+                  res["status"] = "published_confirmed_on_account"; res["permalink"] = perma2.get(it["title"])
+          print("SUMMARY " + json.dumps(results, indent=1))
+          open("result.json", "w").write(json.dumps(results, indent=1))
