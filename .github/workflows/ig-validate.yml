@@ -36,3 +36,6 @@ jobs:
           print("ROUTE B (Unified/system user, graph.facebook.com assigned_instagram_accounts):", s2, json.dumps(b2))
           s3, b3 = get("graph.facebook.com", "/v23.0/me/accounts?fields=id,name,instagram_business_account%7Bid,username%7D")
           print("ROUTE C (Facebook Login user, graph.facebook.com /me/accounts):", s3, json.dumps(b3))
+          for label, path in (("ME", "/v23.0/me?fields=id,name"), ("PERMISSIONS", "/v23.0/me/permissions"), ("BUSINESSES", "/v23.0/me/businesses?fields=id,name"), ("OWNED_IG", "/v23.0/me/instagram_accounts?fields=id,username"), ("ME_IG_FIELD", "/v23.0/me?fields=instagram_business_account")):
+              st, bd = get("graph.facebook.com", path)
+              print("DIAG", label, st, json.dumps(bd)[:600])
