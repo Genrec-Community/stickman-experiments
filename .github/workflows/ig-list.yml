@@ -1,0 +1,30 @@
+name: ig-list
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+    steps:
+      - name: List recent media (read-only)
+        shell: python
+        run: |
+          import os, json, urllib.request, urllib.parse
+          tok = os.environ["IG_ACCESS_TOKEN"]
+          G = "https://graph.facebook.com/v23.0"
+          def get(path):
+              url = G + path + ("&" if "?" in path else "?") + "access_token=" + urllib.parse.quote(tok)
+              with urllib.request.urlopen(url, timeout=60) as r:
+                  return json.loads(r.read().decode())
+          pages = get("/me/accounts?fields=name,instagram_business_account%7Bid,username%7D")
+          m = [p["instagram_business_account"] for p in pages.get("data", []) if p.get("instagram_business_account", {}).get("username") == "things._.explained"]
+          print("matches", [x["id"] for x in m])
+          if len(m) != 1:
+              raise SystemExit("ABORT")
+          r = get("/%s/media?fields=caption,permalink,media_product_type,timestamp&limit=50" % m[0]["id"])
+          for x in r.get("data", []):
+              print("POST", x.get("timestamp"), x.get("media_product_type"), x.get("permalink"), "|", (x.get("caption") or "").split("\n")[0], "| tags:", (x.get("caption") or "").count("#"))
