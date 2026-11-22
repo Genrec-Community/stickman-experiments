@@ -1,0 +1,492 @@
+name: variety-test
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Topic text to render (forced)'
+        required: true
+      style:
+        description: 'Style: B7 or A5'
+        required: false
+        default: 'B7'
+permissions:
+  contents: read
+concurrency:
+  group: variety-test-${{ inputs.topic }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Genrec-Community/youtube-shorts-automation
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Pick next topic from the stickman queue (slot style pool)
+        id: pick
+        run: |
+          python3 - <<'PICK_PY'
+          import csv, os, sys
+          forced = os.environ.get('FORCED_TOPIC', '').strip()
+          forced_style = (os.environ.get('FORCED_STYLE', '').strip() or 'B7').upper()
+          sched = os.environ.get('SCHEDULE', '')
+          pool = {'B7', 'A5', 'H1', 'AUTO'}
+          os.makedirs('/home/runner/w', exist_ok=True)
+          if forced:
+              open('/home/runner/w/topic.txt', 'w').write(forced + '\n')
+              open('/home/runner/w/style.txt', 'w').write(forced_style + '\n')
+              open('/home/runner/w/topic_id.txt', 'w').write('manual')
+              open(os.environ['GITHUB_OUTPUT'], 'a').write('skip=false\ntopic_id=manual\n')
+              print('Forced topic:', forced, '| style:', forced_style)
+              sys.exit(0)
+          rows = [r for r in csv.DictReader(open('stickman-topics.csv', encoding='utf-8')) if None not in r]
+          closed = {r['topic'].strip().lower() for r in rows if r['status'] in ('done', 'in_progress')}
+          chosen = next((r for r in rows if r['status'] == 'pending' and r['style'].strip().upper() in pool
+                         and r['topic'].strip().lower() not in closed), None)
+          if not chosen:
+              print('Queue empty for style pool', sorted(pool))
+              open('/home/runner/w/pool.txt', 'w').write('-'.join(sorted(pool)))
+              open(os.environ['GITHUB_OUTPUT'], 'a').write('skip=true\n')
+              sys.exit(0)
+          chosen['status'] = 'in_progress'
+          with open('stickman-topics.csv', 'w', newline='', encoding='utf-8') as f:
+              w = csv.DictWriter(f, fieldnames=rows[0].keys())
+              w.writeheader(); w.writerows(rows)
+          open('/home/runner/w/topic.txt', 'w').write(chosen['topic'].strip() + '\n')
+          open('/home/runner/w/style.txt', 'w').write(chosen['style'].strip().upper() + '\n')
+          open('/home/runner/w/topic_id.txt', 'w').write(chosen['id'])
+          open(os.environ['GITHUB_OUTPUT'], 'a').write('skip=false\ntopic_id=%s\n' % chosen['id'])
+          print('Chosen:', chosen['id'], chosen['style'], chosen['topic'])
+          PICK_PY
+        env:
+          FORCED_TOPIC: ${{ inputs.topic }}
+          FORCED_STYLE: ${{ inputs.style }}
+          SCHEDULE: ${{ github.event.schedule }}
+      - name: Install system + media deps
+        if: steps.pick.outputs.skip != 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-core
+          sudo fallocate -l 6G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile || echo 'swap not enabled'
+          npm install -g opencode-ai@1.19.6
+          mkdir -p $HOME/w/project $HOME/w/out $HOME/w/tmp
+          echo "start $(date +%s)" > $HOME/w/out/timing.txt
+      - name: Agent chooses the style for this topic (AUTO rows only)
+        if: steps.pick.outputs.skip != 'true'
+        run: |
+          cd $HOME/w
+          if [ "$(cat style.txt)" = "AUTO" ]; then
+            T="$(cat topic.txt)"; ID="$(cat topic_id.txt)"
+            rm -f choice.txt
+            P="Pick the single best visual template for a 45-second vertical explainer Short on this topic: ${T}. Options: A5 = historical cartoon (people, eras, human stories, history, society, health and the body); B7 = pixel-art theater (games, tech, process, cause and effect, small characters acting things out); H1 = Bauhaus poster motion graphics, no characters (abstract ideas, math, physics, light and sound, economics, systems, data). Write ONLY the code A5 or B7 or H1 into the file /home/runner/w/choice.txt, nothing else, then stop."
+            ( OPENCODE_CONFIG_CONTENT='{"permission":{"external_directory":"allow","bash":"allow","edit":"allow","webfetch":"deny"}}' opencode run -m opencode/deepseek-v4.1-flash-free "$P" > choose.log 2>&1 & )
+            for _ in $(seq 1 18); do [ -s choice.txt ] && break; sleep 5; done
+            sleep 2; pkill -9 -f "opencode run" || true
+            C="$(tr -dc 'A-Za-z0-9' < choice.txt 2>/dev/null | tr a-z A-Z | head -c 2)"
+            case "$C" in A5|B7|H1) echo "agent chose $C";; *) N=$(echo "$ID" | tr -dc 0-9); C=$(echo "A5 B7 H1" | cut -d' ' -f$(( (${N:-0} % 3) + 1 ))); echo "agent choice unusable, fallback by id: $C";; esac
+            echo "$C" > style.txt
+          fi
+          echo "STYLE=$(cat style.txt)"
+      - name: Fetch the stickman-video-director skill
+        if: steps.pick.outputs.skip != 'true'
+        run: |
+          git clone --depth 1 https://github.com/kaomei/stickman-video-director $HOME/w/svd
+          cd $HOME/w/svd/skills/directing-stickman-videos
+          npm ci
+          node scripts/autopilot.mjs doctor || true
+          if [ "$(cat $HOME/w/style.txt 2>/dev/null)" = "H1" ]; then
+            git clone --depth 1 https://github.com/alchaincyf/huashu-art-motion $HOME/w/hm
+            sudo apt-get install -y fonts-noto-cjk || true
+            pip install uv playwright
+            python3 -m playwright install --with-deps chromium
+          fi
+      - name: Cache pip + TTS models
+        if: steps.pick.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            /home/runner/w/kokoro.onnx
+            /home/runner/w/voices.bin
+            /home/runner/w/tinyvoca
+          key: stickman-tts-v2
+      - name: Prepare local narration route (edge-tts Andrew default, tiny-voca fallback, free)
+        if: steps.pick.outputs.skip != 'true'
+        run: |
+          pip install kokoro-onnx==0.6.1 soundfile==0.14.0 edge-tts git+https://github.com/n4ze3m/dizione
+          cd $HOME/w
+          [ -s kokoro.onnx ] || curl -fsSL -o kokoro.onnx https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+          [ -s voices.bin ] || curl -fsSL -o voices.bin https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+          mkdir -p tinyvoca/phonemizer
+          [ -s tinyvoca/model.onnx ] || curl -fsSL -o tinyvoca/model.onnx https://huggingface.co/n4ze3m/tiny-voca/resolve/main/onnx/model.onnx
+          [ -s tinyvoca/config.json ] || curl -fsSL -o tinyvoca/config.json https://huggingface.co/n4ze3m/tiny-voca/resolve/main/config.json
+          for f in align.json g2p.json g2p.npz homographs.json lexicon.json lexicon.tsv sources.json; do
+            [ -s "tinyvoca/phonemizer/$f" ] || curl -fsSL -o "tinyvoca/phonemizer/$f" "https://huggingface.co/n4ze3m/tiny-voca/resolve/main/phonemizer/$f"
+          done
+          cat > $HOME/w/tts.py <<'TTS_PY'
+          import os, re, sys
+          import numpy as np, soundfile as sf
+
+          ENGINE = os.environ.get('TTS_ENGINE', 'edge').strip().lower()
+          VOCA_DIR = os.environ.get('TINYVOCA_DIR', '/home/runner/w/tinyvoca')
+          KOKORO_ONNX = os.environ.get('KOKORO_ONNX', '/home/runner/w/kokoro.onnx')
+          KOKORO_VOICES = os.environ.get('KOKORO_VOICES', '/home/runner/w/voices.bin')
+
+          def synth_kokoro(text, out, voice):
+              from kokoro_onnx import Kokoro
+              k = Kokoro(KOKORO_ONNX, KOKORO_VOICES)
+              s, sr = k.create(text, voice=voice or 'am_michael', speed=1.12, lang='en-us')
+              sf.write(out, s, sr)
+              return len(s) / sr
+
+          def synth_tinyvoca(text, out, voice):
+              os.environ.setdefault('DIZIONE_DATA', VOCA_DIR + '/phonemizer')
+              import onnxruntime as ort, dizione
+              session = ort.InferenceSession(VOCA_DIR + '/model.onnx')
+              vid = 1 if (voice or '').upper() == 'M2' else 0
+              one = lambda v: np.array([v], dtype=np.float32)
+              chunks = []
+              for part in re.split(r'(?<=[.!?])\s+', text.strip()):
+                  part = part.strip()
+                  if not part:
+                      continue
+                  if part[-1] not in '.!?':
+                      part += '.'
+                  ph = dizione.phonemize(part)
+                  audio, _ = session.run(None, {
+                      'tokens': np.array([ph.ids], dtype=np.int64),
+                      'stress': np.array([ph.stress], dtype=np.int64),
+                      'voice': np.array([vid], dtype=np.int64),
+                      'speed': one(1.0),
+                      'pitch_shift': one(0.0),
+                      'pitch_range': one(1.0),
+                  })
+                  chunks.append(audio[0])
+              if not chunks:
+                  raise SystemExit('nothing pronounceable in text')
+              wave = np.concatenate(chunks)
+              peak = float(np.abs(wave).max())
+              if peak > 0.99:
+                  wave = wave * (0.99 / peak)
+              sf.write(out, wave, 24000)
+              return len(wave) / 24000
+
+          def synth_edge(text, out):
+              import asyncio, time, subprocess, tempfile
+              import edge_tts
+              mp3 = os.path.join(tempfile.gettempdir(), 'edge_tts.mp3')
+              last = None
+              for _ in range(8):
+                  try:
+                      if os.path.exists(mp3):
+                          os.remove(mp3)
+                      asyncio.run(edge_tts.Communicate(text, 'en-US-AndrewMultilingualNeural', rate='+12%').save(mp3))
+                      if os.path.getsize(mp3) > 2000 and subprocess.run(['ffmpeg', '-y', '-v', 'error', '-i', mp3, '-ar', '24000', '-ac', '1', out]).returncode == 0:
+                          return sf.info(out).duration
+                  except Exception as e:
+                      last = e
+                  time.sleep(3)
+              raise RuntimeError('edge-tts gave no audio after 8 attempts: %s' % last)
+
+          text, out = sys.argv[1], sys.argv[2]
+          voice = sys.argv[3] if len(sys.argv) > 3 else None
+          used = ENGINE
+          if ENGINE == 'kokoro':
+              secs = synth_kokoro(text, out, voice)
+          elif ENGINE == 'edge':
+              try:
+                  secs = synth_edge(text, out)
+              except Exception as e:
+                  print('edge-tts failed, falling back to tiny-voca:', str(e)[:200])
+                  used = 'tinyvoca'
+                  secs = synth_tinyvoca(text, out, voice or 'F2')
+          else:
+              secs = synth_tinyvoca(text, out, voice or 'F2')
+          # Voice polish (user-requested): highpass, EQ, compressor, tighten pauses. Falls back to the raw narration if ffmpeg fails.
+          import subprocess, tempfile
+          VOICE_CHAIN = ('highpass=f=80,equalizer=f=140:t=q:w=1.2:g=3.5,equalizer=f=4500:t=q:w=1.5:g=2.5,'
+                         'acompressor=threshold=-18dB:ratio=3:attack=5:release=50,'
+                         'silenceremove=stop_periods=-1:stop_duration=0.12:stop_threshold=-45dB,alimiter=limit=0.95')
+          EDGE_CHAIN = VOICE_CHAIN.replace('stop_duration=0.12', 'stop_duration=0.35')
+          raw_tts = os.path.join(tempfile.gettempdir(), 'raw_tts.wav')
+          os.replace(out, raw_tts)
+          try:
+              ok = subprocess.run(['ffmpeg', '-y', '-v', 'error', '-i', raw_tts, '-af', (EDGE_CHAIN if used == 'edge' else VOICE_CHAIN), out]).returncode == 0 and sf.info(out).duration > 0.2
+          except Exception:
+              ok = False
+          if not ok:
+              print('voice filter failed, using raw narration')
+              os.replace(raw_tts, out)
+          secs = sf.info(out).duration
+          print('wrote', out, round(secs, 2), 'seconds via', used)
+          TTS_PY
+          python3 $HOME/w/tts.py 'Narration route check.' $HOME/w/out/tts-check.wav
+      - name: OpenCode directs and renders the stickman Short (deepseek-v4.1-flash-free)
+        if: steps.pick.outputs.skip != 'true'
+        working-directory: /home/runner/w
+        run: |
+          TOPIC="$(cat $HOME/w/topic.txt)"; STYLE="$(cat $HOME/w/style.txt)"
+          SKILL_DIR=/home/runner/w/svd/skills/directing-stickman-videos; KIND="stickman explainer Short"
+          case "$STYLE" in
+            A5) STYLE_NAME="Style 5 Historical Cartoon (code-rendered approximation)"; STYLE_REF="references/historical-cartoon.md and references/a1-a5-direction.md (the drawing grammar and era guidance only)"
+                ROUTE="A5 is one of the Skill's A (Model Engine) styles, which normally depend on external AI video generation. That is NOT available here (free-only, headless CI). Build the video with project-local code: draw each scene as 2D vector/canvas frames at native 1080x1920 (the Skill's node runtime has @napi-rs/canvas and sharp; SVG rasterized is fine) following the style's drawing grammar (character look, palette, painted-style backgrounds, expressive simple faces, caption-safe layout), animate with real motion, mux with the narration and a locally synthesized quiet music bed, encode with ffmpeg. Render at the full 1080x1920 from the start; do not drop to 720p for speed (if it is slow, simplify scenes instead). State plainly in NOTES.md that this is a code-rendered approximation of the style, not generated video." ;;
+            H1) SKILL_DIR=/home/runner/w/hm; KIND="explainer Short with no characters (Bauhaus poster motion graphics)"; STYLE_NAME="H1 Bauhaus Poster Motion (huashu-art-motion)"; STYLE_REF="its track steps: shot list template, storyboard lint, then the engine"
+                ROUTE="HARD ORDER OF WORK FOR H1: as soon as the narration script is final and the narration wav is measured, write /home/runner/w/out/metadata.json and /home/runner/w/out/NOTES.md (first version) BEFORE building scenes or rendering anything; update NOTES.md at the end. The skill film_gate result yellow is ACCEPTABLE: make at most ONE fix pass on its findings, then ship the video. Never tune the gate beyond that, a late video with no metadata counts as a failed run. H1 uses the installed huashu-art-motion skill at /home/runner/w/hm INSTEAD of the stickman Skill (ignore any mention of the stickman Skill below). Work in the skill's track: write the shot list per references/shot-list template, lock ONE visual language for the whole film (flat 1920s Bauhaus poster look: cream paper, ink-black geometry, flat red/blue/yellow accents, thick rules, no gradients, no people), run scripts/storyboard_lint.py, copy scripts/engine into the project, build about 10 custom scenes as a film folder under engine/demos/<name>/, render with: cd <project>/engine && uv run --with playwright python render.py --film demos/<name> --width 1080 --height 1920 --fps 30 --crf 16 --out /home/runner/w/tmp/silent.mp4, then mux the narration (ffmpeg, -af apad, aac) to /home/runner/w/out/stickman.mp4 and run scripts/film_gate.py on it. All on-screen text and narration are English (the skill docs are Chinese). Captions are the narration verbatim, 2-3 word or clause chunks, large and readable on a cream strip. Skill human or independent review gates cannot run headless: record them in NOTES.md as bypassed." ;;
+            *) STYLE="B7"; STYLE_NAME="B7 Pixel Theater"; STYLE_REF="references/b7-pixel-theater.md, references/b7-native-portrait.md, references/b7-review.md"
+                ROUTE="B7 is a project-local code style: follow references/b7-pixel-theater.md and its 9:16 portrait contract (native 180x320 canvas enlarged 6x to 1080x1920), using the Skill's bundled pixel/ending helpers with reviewed project-local code. Inspect the bundled reference films as the reference mandates." ;;
+          esac
+          cat > $HOME/w/PROMPT.md <<PROMPT_EOF
+          You are producing ONE vertical YouTube Short with the installed Skill at ${SKILL_DIR} (read its SKILL.md, then the references it routes you to). Work non-interactively in this CI environment; ask no questions.
+
+          Assignment: a ${KIND} of 40-52 seconds when narrated (130-150 words of narration, hard ceiling 55 seconds and 160 words), visual style: ${STYLE_NAME}, native 9:16 portrait at EXACTLY 1080x1920 pixels (never 720x1280 or any lower resolution), English, on this topic: "${TOPIC}"
+
+          Script: FIRST read $GITHUB_WORKSPACE/skills/things-explained-scriptwriter/SKILL.md and follow it exactly. It is the channel scriptwriting skill (Scenario-First, Name-Drop, Mechanism, Loop; 130-150 words; TTS prosody rules; Part A narration text and Part B scene beats). Its structure, style and length rules win over anything else about script writing, including the older $GITHUB_WORKSPACE/framework.md (use framework.md only for its Section 4 audio and caption rules: 2-3 word caption chunks with one highlighted keyword, subtle background bed around -30dB, low-volume transition SFX). Do NOT apply framework.md Section 3 dark-canvas visual spec - the stickman styles keep their own look. The narration you synthesize must be the Part A text verbatim, and put Part A and Part B into NOTES.md. Where the skill conflicts with the editorial standard below on facts, caveats or sensitivity, the editorial standard wins.
+
+          Hard constraints (these override any Skill suggestion):
+          - Free-only: no paid or credentialed services, no API keys, no browser-driven generation, no external media downloads of unclear license.
+          - Route: ${ROUTE}
+          - Project folder: /home/runner/w/project (outside the Skill, as required). Final video must be exactly 1080x1920, 30 fps, H.264 + AAC; verify with ffprobe before finishing and re-render at full size if it is smaller.
+          - Narration TTS: the project's configured local route is python3 /home/runner/w/tts.py "<text>" <out.wav> (the channel voice, already en-US neural at +12% with the channel EQ and light pause trimming applied automatically; do not post-process it, do not pick a voice or engine, and use the measured duration of the returned wav for timing). Do not attempt other TTS providers or engines. Voice cloning is forbidden.
+          - Music/SFX: only what the Skill can synthesize locally or its own bundled assets; skip anything needing downloads or licenses. If you use any CC-BY asset, its full attribution line goes into metadata.json's description.
+          - Human-approval gates: where the Skill requires a human preview or design approval that is impossible in this headless CI, proceed with the most conservative choice and record exactly which gates were bypassed in NOTES.md; never fabricate an approval or acceptance.
+          - Keep total runtime under 105 minutes of compute. Do not stop to ask or to summarize before the MP4 exists: keep working with tools until it does. Use /home/runner/w/tmp for scratch files, never /tmp.
+
+          Visual variety contract (this overrides any Skill wording about minimalist, dark-canvas, one-room or single-scene visuals; the Scenario-First hook may open in one place, but the explanation must travel):
+          - Use at least 7 clearly different backdrops or sets (a different background, palette or composition, not just a changed prop), and change set every 4 to 6 seconds. Never hold the same background longer than 8 seconds.
+          - Show the idea literally in the world: for each mechanism step go to a new location or a cutaway view (inside the device, a street, a different room, a landscape, a diagram stage). Bring in supporting characters and props where they help. The ending may return to the opening set to close the loop.
+          - Give every beat a visual_cue that names its backdrop, and list the backdrops under a Backdrops heading in NOTES.md.
+          - Keep all style rules, caption rules and the 1080x1920 portrait contract.
+
+          Editorial standard (the script becomes spoken narration and captions verbatim):
+          - The scriptwriter skill sets the hook and structure (scenario first, name the term only after it). No clickbait lies, no fake urgency.
+          - Every factual claim must be true and widely supported. Never invent studies, names or numbers. Qualify single-study claims in a few words; distinguish "no convincing evidence" from "proven no effect".
+          - Religion, culture and living traditions: describe beliefs as beliefs ("followers believe..."), no mockery or satire of any faith, no deity or sacred figure depicted as a character or caricature, no invented doctrines, dates or numbers.
+          - No medical advice and no self-experiment instructions, ever. For health-adjacent topics, end with what the evidence supports.
+
+          Do this:
+          1. Read SKILL.md and ${STYLE_REF} (for B7 this is the 9:16 portrait contract; for A5 the historical-cartoon grammar). Run the style's workflow query as directed.
+          2. Write the script exactly per the scriptwriter skill (Part A narration and Part B beats), then produce narration with the local TTS route.
+          3. Build the project per the route above and render the final MP4 with project-local code at 1080x1920 (9:16).
+          4. Copy the final MP4 to /home/runner/w/out/stickman.mp4.
+          5. Metadata: FIRST read $GITHUB_WORKSPACE/skills/youtube-shorts-metadata-generator/SKILL.md and apply it to your final Part A narration text. Write /home/runner/w/out/metadata.json (valid JSON, no comments) with these keys:
+             "title": the skill's recommended_title (under 55 characters, the curiosity hook in the first 5 words, no spoiler of the ending, no misleading promise),
+             "titles": {"option_a_curiosity": "...", "option_b_contrarian": "...", "option_c_search_hybrid": "..."},
+             "detected_concept": "official name of the concept", "primary_niche": "Psychology | Math | Philosophy | Science | Behavioral Economics",
+             "description": "per the skill: a keyword-rich hook summary of 2 sentences (25-35 words, not the raw script), then 2-3 plain honest sentences about what the video explains (total about 120-180 words), then one comment-bait question line (10-15 words). NO hashtags inside the description (the upload script appends them at the bottom). No sources list. Include any required asset attribution line here.",
+             "hashtags": ["4-5 tags WITHOUT the # symbol, lowercase, must include shorts, never more than 5"]
+             Skip the skill's pinned comment section entirely: do not write any pinned_comment.
+             Every claim in the title, description and comment must be true and supported by the script; the editorial standard above applies to metadata too (no invented facts, no medical advice, beliefs described as beliefs).
+          6. Write /home/runner/w/out/NOTES.md: style, script, what worked, renderer complaints, bypassed gates, render time.
+          7. If a step fails twice, simplify scope (fewer scenes) rather than retrying the same thing. Never claim success without an actual playable MP4 in /home/runner/w/out.
+          PROMPT_EOF
+          cat > $HOME/w/run_agent.sh <<'AGENT_SH'
+          #!/bin/bash
+          trap '' TERM HUP
+          export OPENCODE_CONFIG_CONTENT='{"permission":{"external_directory":"allow","bash":"allow","edit":"allow","webfetch":"deny"}}'
+          MODEL=opencode/deepseek-v4.1-flash-free
+          START=$(date +%s)
+          # Stall watchdog: kill an attempt that shows no activity (opencode.log growth or file changes under w/) for STALL seconds, so a silent hang costs minutes, not the whole budget.
+          STALL=480
+          activity() { echo "$(stat -c %s $HOME/w/out/opencode.log 2>/dev/null) $(find $HOME/w -type f -not -name agent-loop.log -printf '%T@\n' 2>/dev/null | sort -n | tail -1)"; }
+          run_oc() {
+            local LIMIT=$1; shift
+            local AT=$(date +%s) LAST NOW CUR
+            "$@" 2>&1 | tee -a $HOME/w/out/opencode.log &
+            local PIPE=$!
+            LAST=$(activity); local LASTCHG=$(date +%s)
+            while kill -0 $PIPE 2>/dev/null; do
+              sleep 20; NOW=$(date +%s); CUR=$(activity)
+              if [ "$CUR" != "$LAST" ]; then LAST=$CUR; LASTCHG=$NOW; fi
+              if [ $((NOW-LASTCHG)) -ge $STALL ]; then echo "STALL: no activity for ${STALL}s, restarting agent"; echo stall >> $HOME/w/stalls.log; pkill -9 -f "opencode run" || true; break; fi
+              if [ $((NOW-AT)) -ge $LIMIT ]; then echo "attempt time limit"; pkill -9 -f "opencode run" || true; break; fi
+            done
+            wait $PIPE 2>/dev/null || true
+          }
+          for i in 1 2 3 4 5 6 7 8; do
+            if [ -s $HOME/w/out/stickman.mp4 ] && [ "$(ffprobe -v error -show_entries format=duration -of csv=p=0 $HOME/w/out/stickman.mp4 | cut -d. -f1)" -ge 20 ] 2>/dev/null; then echo "video present after attempt $((i-1))"; break; fi
+            [ "$(cat $HOME/w/stalls.log 2>/dev/null | wc -l)" -ge 3 ] && { echo "3 stalls: giving up fast instead of burning the budget"; break; }
+            LEFT=$(( 6600 - ($(date +%s) - START) ))
+            [ $LEFT -lt 300 ] && { echo "time budget used up"; break; }
+            if [ $i -eq 1 ]; then
+              run_oc $LEFT opencode run -m $MODEL "$(cat $HOME/w/PROMPT.md)"
+            else
+              run_oc $LEFT opencode run -c -m $MODEL "You stopped before finishing. The final playable MP4 does not exist yet at /home/runner/w/out/stickman.mp4. Do not stop and do not summarize: keep calling tools until the video is rendered at 1080x1920, copied to /home/runner/w/out/stickman.mp4, and metadata.json and NOTES.md are written. Use /home/runner/w/tmp for scratch files, not /tmp. Re-read /home/runner/w/PROMPT.md if you need the full assignment."
+            fi
+          done
+          echo AGENT_DONE
+          AGENT_SH
+          chmod +x $HOME/w/run_agent.sh
+          setsid nohup $HOME/w/run_agent.sh > $HOME/w/out/agent-loop.log 2>&1 < /dev/null &
+          AGENT_PID=$!
+          while kill -0 $AGENT_PID 2>/dev/null; do sleep 20; done
+          tail -n 40 $HOME/w/out/agent-loop.log || true
+          ls -la $HOME/w/out
+      - name: Validate video + metadata (one corrective retry)
+        if: steps.pick.outputs.skip != 'true'
+        working-directory: /home/runner/w
+        run: |
+          W=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 out/stickman.mp4 2>/dev/null || true)
+          if [ -f out/stickman.mp4 ] && [ "$W" != "1080x1920" ]; then
+            echo "video is $W, not 1080x1920: scaling to 1080x1920 as a safety net"
+            ffmpeg -y -v error -i out/stickman.mp4 -vf 'scale=1080:1920:flags=lanczos,setsar=1' -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a copy out/stickman_1080.mp4 && mv out/stickman_1080.mp4 out/stickman.mp4
+            echo "NOTE: safety-net upscale applied from $W" >> out/NOTES.md
+          fi
+          python3 - <<'NORM_PY'
+          import json, re
+          # The skill's own metadata.json uses "tags"; the upload script reads "hashtags". Map it so a valid render is never lost to a key name.
+          try:
+              m = json.load(open('out/metadata.json', encoding='utf-8'))
+              if not (isinstance(m.get('hashtags'), list) and m['hashtags']):
+                  src = m.get('tags')
+                  if isinstance(src, str):
+                      src = [t for t in re.split(r'[,\s]+', src) if t]
+                  if isinstance(src, list) and src:
+                      m['hashtags'] = [re.sub(r'[^A-Za-z0-9_]', '', str(t)) for t in src if re.sub(r'[^A-Za-z0-9_]', '', str(t))][:6]
+                      json.dump(m, open('out/metadata.json', 'w', encoding='utf-8'), indent=2, ensure_ascii=False)
+                      print('normalized: hashtags set from tags:', m['hashtags'])
+          except Exception as e:
+              print('metadata normalize skipped:', e)
+          NORM_PY
+          python3 - <<'NORM2_PY'
+          import json, re
+          # Deterministic cleanup of the metadata the agent wrote: hashtags max 5 with shorts first, no hashtags inside the description, title fallback.
+          try:
+              p = '/home/runner/w/out/metadata.json'
+              m = json.load(open(p, encoding='utf-8'))
+              tags = []
+              for t in (m.get('hashtags') or m.get('tags') or []):
+                  t = re.sub(r'[^A-Za-z0-9_]', '', str(t)).lower()
+                  if t and t not in tags:
+                      tags.append(t)
+              tags = [t for t in tags if t != 'shorts']
+              m['hashtags'] = ['shorts'] + tags[:4]
+              d = str(m.get('description') or '')
+              d = re.sub(r'[ \t]*#\w+', '', d)
+              d = re.sub(r'[ \t]+\n', '\n', d).strip()
+              m['description'] = d
+              ti = str(m.get('title') or m.get('recommended_title') or (m.get('titles') or {}).get('option_a_curiosity') or '').strip()
+              m['title'] = ti[:100]
+              m.pop('pinned_comment', None)
+              json.dump(m, open(p, 'w', encoding='utf-8'), indent=2, ensure_ascii=False)
+              print('metadata normalized: title=%r hashtags=%s' % (m['title'], m['hashtags']))
+          except Exception as e:
+              print('metadata normalize2 skipped:', e)
+          NORM2_PY
+          check() {
+          python3 - <<'VALID_PY'
+          import json, subprocess, sys
+          try:
+              d = float(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','csv=p=0','out/stickman.mp4']).strip())
+              assert 35 <= d <= 58, 'duration %.1fs out of range 35-58' % d
+              m = json.load(open('out/metadata.json', encoding='utf-8'))
+              assert m.get('title') and len(m['title']) <= 100, 'bad title'
+              assert m.get('description'), 'missing description'
+              assert isinstance(m.get('hashtags'), list) and m['hashtags'], 'missing hashtags'
+              print('validation OK: %.1fs | %s' % (d, m['title']))
+          except Exception as e:
+              print('VALIDATION FAILED:', e)
+              sys.exit(1)
+          VALID_PY
+          }
+          if ! check; then
+            if [ -f out/stickman.mp4 ]; then
+              echo "video exists; retrying metadata only"
+              ( OPENCODE_CONFIG_CONTENT='{"permission":{"external_directory":"allow","bash":"allow","edit":"allow","webfetch":"deny"}}' opencode run -m opencode/deepseek-v4.1-flash-free "Write /home/runner/w/out/metadata.json for the already-rendered stickman Short about $(cat $HOME/w/topic.txt). Strictly valid JSON: follow $GITHUB_WORKSPACE/skills/youtube-shorts-metadata-generator/SKILL.md and write keys: title (the recommended pick, under 55 chars), titles (option_a_curiosity, option_b_contrarian, option_c_search_hybrid), detected_concept, primary_niche, description (skill formula, about 120-180 words, no hashtags inside, no sources list), hashtags (4-5 tags without #, must include shorts). Read /home/runner/w/out/NOTES.md for what the video contains." >> $HOME/w/out/opencode.log 2>&1 & )
+              for _ in $(seq 1 18); do [ -s out/metadata.json ] && break; sleep 5; done
+              sleep 3; pkill -9 -f "opencode run" || true
+            fi
+          python3 - <<'FALLBACK_PY'
+          import json, os, re
+          # Deterministic metadata fallback: a valid video is never lost because the agent skipped metadata.json.
+          p = '/home/runner/w/out/metadata.json'
+          ok = False
+          try:
+              m = json.load(open(p, encoding='utf-8'))
+              ok = bool(m.get('title') and m.get('description'))
+          except Exception:
+              pass
+          if not ok:
+              topic = open('/home/runner/w/topic.txt', encoding='utf-8').read().strip()
+              base = re.sub(r'\s*\(.*?\)', '', topic).strip().rstrip('?.')
+              title = base if base.lower().startswith(('why', 'how', 'what', 'can', 'is', 'does', 'do', 'the')) else 'The ' + base
+              title = title[:53].rstrip().rstrip('?') + '?'
+              narr = ''
+              for f in ('/home/runner/w/project/script.txt', '/home/runner/w/tmp/script.txt', '/home/runner/w/out/script.txt'):
+                  if os.path.exists(f):
+                      narr = open(f, encoding='utf-8', errors='ignore').read().strip()
+                      break
+              if not narr and os.path.exists('/home/runner/w/out/NOTES.md'):
+                  t = open('/home/runner/w/out/NOTES.md', encoding='utf-8', errors='ignore').read()
+                  mm = re.search(r'Part A[^\n]*\n+(.*?)(\n#|\Z)', t, re.S)
+                  narr = mm.group(1).strip() if mm else ''
+              narr = re.sub(r'\s+', ' ', narr)
+              skip = ('what', 'does', 'this', 'that', 'with', 'your', 'from', 'trap', 'honestly', 'explained')
+              words = [x for x in re.findall(r'[a-z]{4,}', base.lower()) if x not in skip]
+              tags = (['shorts'] + words[:3] + ['explained'])[:5]
+              desc = ((narr + '\n\n') if narr else (base + ' explained in under a minute.\n\n')) + 'What surprised you most about this?'
+              json.dump({'title': title, 'description': desc, 'hashtags': tags, 'detected_concept': base, 'primary_niche': 'Education', 'fallback': True}, open(p, 'w', encoding='utf-8'), indent=2, ensure_ascii=False)
+              print('metadata fallback written:', title, tags)
+          FALLBACK_PY
+            check
+          fi
+      - name: Variety check (a flat video gets one corrective pass)
+        if: steps.pick.outputs.skip != 'true'
+        working-directory: /home/runner/w
+        run: |
+          cat > variety.py <<'VPY'
+          import json, subprocess, sys
+          W, H = 32, 56
+          def measure(path):
+              raw = subprocess.run(['ffmpeg', '-v', 'error', '-i', path, '-vf', 'fps=4,crop=iw:ih*0.78:0:0,scale=%d:%d:flags=area' % (W, H), '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], capture_output=True).stdout
+              n = W * H * 3
+              fr = [raw[i:i + n] for i in range(0, len(raw) - n + 1, n)]
+              cuts = [i + 1 for i in range(len(fr) - 1) if sum(abs(a - b) for a, b in zip(fr[i], fr[i + 1])) / n > 8]
+              bounds = [0] + cuts + [len(fr)]
+              longest = max((b - a) for a, b in zip(bounds, bounds[1:])) / 4.0 if len(fr) else 0
+              return {'scenes': len(cuts) + 1, 'longest_segment_s': longest, 'duration_s': len(fr) / 4.0}
+          print(json.dumps(measure(sys.argv[1])))
+          VPY
+          STYLE=$(cat style.txt)
+          python3 variety.py out/stickman.mp4 > out/variety-1.json || echo '{"scenes":99}' > out/variety-1.json
+          echo "first pass:"; cat out/variety-1.json
+          FLAT=$(python3 -c "import json;d=json.load(open('out/variety-1.json'));print(1 if d['scenes']<6 and '$STYLE'!='H1' else 0)")
+          if [ "$FLAT" = "1" ]; then
+            echo "flat video: one corrective pass"
+            cp out/stickman.mp4 out/stickman_first_pass.mp4
+            N=$(python3 -c "import json;print(json.load(open('out/variety-1.json'))['scenes'])")
+            ( timeout -k 30 1800 env OPENCODE_CONFIG_CONTENT='{"permission":{"external_directory":"allow","bash":"allow","edit":"allow","webfetch":"deny"}}' opencode run -c -m opencode/deepseek-v4.1-flash-free "The rendered video /home/runner/w/out/stickman.mp4 is visually flat: it shows only about $N distinct backdrops and holds one set for most of the film. Do NOT change the narration or its timing. Re-render only the visuals so the film uses at least 7 clearly different backdrops or sets (different background, palette or composition) and changes set every 4 to 6 seconds, never holding one background longer than 8 seconds. For each mechanism beat go to a new location or a cutaway view, add supporting characters or props where they help, and keep all style, caption and 1080x1920 rules. Reuse the existing narration wav and mux it, write the new MP4 to /home/runner/w/out/stickman.mp4, and add a Backdrops list to NOTES.md. Do not open or view image files; check with ffprobe only. Use /home/runner/w/tmp for scratch files." > out/variety-retry.log 2>&1 || true ) 
+            pkill -9 -f "opencode run" || true
+            D=$(ffprobe -v error -show_entries format=duration -of csv=p=0 out/stickman.mp4 2>/dev/null | cut -d. -f1)
+            R=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 out/stickman.mp4 2>/dev/null)
+            python3 variety.py out/stickman.mp4 > out/variety-2.json || echo '{"scenes":0}' > out/variety-2.json
+            echo "second pass: $R ${D}s"; cat out/variety-2.json
+            KEEP=$(python3 -c "import json;a=json.load(open('out/variety-1.json'))['scenes'];b=json.load(open('out/variety-2.json'))['scenes'];print(1 if b>a and '$R'=='1080x1920' and 35<=int('${D:-0}')<=58 else 0)")
+            if [ "$KEEP" = "1" ]; then
+              echo "keeping the corrected video"; echo "NOTE: variety corrective pass applied (scenes $N -> more)" >> out/NOTES.md
+            else
+              echo "corrective pass did not improve it: restoring the first pass"; cp out/stickman_first_pass.mp4 out/stickman.mp4
+            fi
+          fi
+          python3 variety.py out/stickman.mp4 | tee out/variety-final.json
+      - name: Finish clock and summary
+        if: always()
+        run: |
+          if [ -f $HOME/w/out/timing.txt ]; then
+            s=$(head -1 $HOME/w/out/timing.txt | cut -d' ' -f2)
+            echo "total_seconds_since_start_step $(( $(date +%s) - s ))" >> $HOME/w/out/timing.txt
+            cat $HOME/w/out/timing.txt
+            { echo "### Stickman short run"; echo; echo "- Topic: $(cat $HOME/w/topic.txt 2>/dev/null || echo none)"; echo "- Style: $(cat $HOME/w/style.txt 2>/dev/null || echo none)"; cat $HOME/w/out/youtube_result.json 2>/dev/null || echo '- YouTube: upload step disabled or not run'; } >> $GITHUB_STEP_SUMMARY
+            jq -r '"", "- Title: " + (.title // ""), "- Title options: " + ((.titles // {}) | [.[]] | join(" | ")), "", "Description:", (.description // ""), "", "- Hashtags: " + ((.hashtags // []) | map("#" + .) | join(" "))' $HOME/w/out/metadata.json >> $GITHUB_STEP_SUMMARY || true
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.pick.outputs.skip != 'true'
+        with:
+          name: variety-output
+          path: /home/runner/w/out
+          retention-days: 14
