@@ -1,0 +1,82 @@
+name: ig-publish-test
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ART_URL: 'https://productionresultssa10.blob.core.windows.net/actions-results/9ef151d5-ce96-4f88-916a-dde4d8c0c4d4/workflow-job-run-2005a560-b44e-542c-8bad-8a601c5e9068/artifacts/cbb367087205e9951393568799cac39b1997b53ab82bf0eaf2ad31cb719bd25e.zip?rscd=attachment%3B+filename%3D%22stickman-output.zip%22&rsct=application%2Fzip&se=2026-11-22T12%3A54%3A54Z&sig=MJqQDkn%2BpD9H6WHebo8ZcT%2FIx3AI7bcWtwKd%2BqtXPok%3D&ske=2026-11-22T15%3A15%3A03Z&skoid=ca7593d4-ee42-46cd-af88-8b886a2f84eb&sks=b&skt=2026-11-22T11%3A15%3A03Z&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skv=2025-11-05&sp=r&spr=https&sr=b&st=2026-11-22T12%3A44%3A49Z&sv=2025-11-05'
+    steps:
+      - name: Fetch the already-public s8 render
+        run: |
+          curl -fsSL -o a.zip "$ART_URL"
+          unzip -o -q a.zip stickman.mp4 metadata.json youtube_result.json
+          echo "f636e30c4647c3d2d6e86b98c24a9cee395807915fcda248f9182b5b148c42de  stickman.mp4" | sha256sum -c -
+          cat youtube_result.json
+      - name: Host the video as a release asset
+        run: |
+          TAG="ig-test-s8-${{ github.run_id }}"
+          gh release create "$TAG" --repo "${{ github.repository }}" --title "IG test $TAG" --notes "Temporary host for the Instagram test Reel (same video as https://youtu.be/5IlYgOnZojQ)." stickman.mp4
+          URL=$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq '.assets[0].browser_download_url')
+          echo "VIDEO_URL=$URL" >> "$GITHUB_ENV"
+          curl -sIL "$URL" | grep -iE '^HTTP|content-length'
+      - name: Verify target account then publish one Reel
+        shell: python
+        run: |
+          import os, json, time, urllib.request, urllib.parse, urllib.error
+          tok = os.environ["IG_ACCESS_TOKEN"]
+          G = "https://graph.facebook.com/v23.0"
+          def call(method, path, data=None):
+              url = G + path
+              body = None
+              if method == "GET":
+                  url += ("&" if "?" in url else "?") + "access_token=" + urllib.parse.quote(tok)
+              else:
+                  d = dict(data or {}); d["access_token"] = tok
+                  body = urllib.parse.urlencode(d).encode()
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url, data=body, method=method), timeout=60) as r:
+                      return r.status, json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  try: b = json.loads(e.read().decode()).get("error", {})
+                  except Exception: b = {}
+                  return e.code, {"error": {"type": b.get("type"), "code": b.get("code"), "subcode": b.get("error_subcode"), "message": str(b.get("message", ""))[:300]}}
+          st, pages = call("GET", "/me/accounts?fields=name,instagram_business_account%7Bid,username%7D")
+          matches = [(p["name"], p["instagram_business_account"]) for p in pages.get("data", []) if p.get("instagram_business_account", {}).get("username") == "things._.explained"]
+          print("account matches:", [(n, a["id"]) for n, a in matches])
+          if len(matches) != 1:
+              raise SystemExit("ABORT: expected exactly one things._.explained account, not publishing")
+          uid = matches[0][1]["id"]
+          st, who = call("GET", "/%s?fields=username" % uid)
+          print("verify:", st, who)
+          if who.get("username") != "things._.explained":
+              raise SystemExit("ABORT: username mismatch, not publishing")
+          meta = json.load(open("metadata.json"))
+          tags = ["#" + t for t in meta.get("hashtags", [])]
+          caption = (meta["title"] + "\n\n" + meta["description"] + "\n\n" + " ".join(tags))[:2100]
+          st, cont = call("POST", "/%s/media" % uid, {"media_type": "REELS", "video_url": os.environ["VIDEO_URL"], "caption": caption, "share_to_feed": "true"})
+          print("container:", st, json.dumps(cont))
+          cid = cont.get("id")
+          if not cid:
+              raise SystemExit("ABORT: container not created")
+          status = ""
+          for _ in range(40):
+              time.sleep(15)
+              s, r = call("GET", "/%s?fields=status_code,status" % cid)
+              status = r.get("status_code", "")
+              print("container status:", s, status, r.get("status", ""))
+              if status in ("FINISHED", "ERROR", "EXPIRED"):
+                  break
+          if status != "FINISHED":
+              raise SystemExit("ABORT: container not finished (%s), not publishing" % status)
+          st, pub = call("POST", "/%s/media_publish" % uid, {"creation_id": cid})
+          print("publish:", st, json.dumps(pub))
+          mid = pub.get("id")
+          if mid:
+              s, pl = call("GET", "/%s?fields=permalink,media_product_type" % mid)
+              print("RESULT permalink:", s, json.dumps(pl))
