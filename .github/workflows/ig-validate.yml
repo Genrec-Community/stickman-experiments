@@ -1,0 +1,38 @@
+name: ig-validate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+    steps:
+      - name: Validate token route and account (read-only, no publish)
+        shell: python
+        run: |
+          import os, json, urllib.request, urllib.error
+          tok = os.environ.get("IG_ACCESS_TOKEN", "")
+          print("token present:", bool(tok), "length:", len(tok))
+          def get(host, path):
+              req = urllib.request.Request("https://%s%s" % (host, path), headers={"Authorization": "Bearer " + tok})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      return r.status, json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  try:
+                      body = json.loads(e.read().decode())
+                  except Exception:
+                      body = {}
+                  err = body.get("error", {})
+                  return e.code, {"error_type": err.get("type"), "error_code": err.get("code"), "error_subcode": err.get("error_subcode"), "message": str(err.get("message", ""))[:160]}
+              except Exception as e:
+                  return -1, {"exception": type(e).__name__}
+          s, b = get("graph.instagram.com", "/v23.0/me?fields=user_id,username,account_type")
+          print("ROUTE A (Instagram Login, graph.instagram.com /me):", s, json.dumps(b))
+          s2, b2 = get("graph.facebook.com", "/v23.0/me/assigned_instagram_accounts?fields=id,username")
+          print("ROUTE B (Unified/system user, graph.facebook.com assigned_instagram_accounts):", s2, json.dumps(b2))
+          s3, b3 = get("graph.facebook.com", "/v23.0/me/accounts?fields=id,name,instagram_business_account%7Bid,username%7D")
+          print("ROUTE C (Facebook Login user, graph.facebook.com /me/accounts):", s3, json.dumps(b3))
