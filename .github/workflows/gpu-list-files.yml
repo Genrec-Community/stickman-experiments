@@ -1,0 +1,27 @@
+name: gpu-list-files
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gpu-list-files
+  cancel-in-progress: true
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-manufacturing-sample
+          run-id: 45187702134
+          github-token: ${{ github.token }}
+          path: saved
+      - name: List artifact and project files
+        run: |
+          set -x
+          ls -la saved/
+          tar -tzf saved/project-source.tar.gz | grep -v node_modules | sort > /tmp/list.txt || true
+          mkdir -p proj && tar -xzf saved/project-source.tar.gz -C proj
+          find proj -type f -not -path '*/node_modules/*' -printf '%s\t%p\n' | sort -k2
