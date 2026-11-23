@@ -71,7 +71,7 @@ jobs:
               (root/name).write_bytes(data)
           PY
           cd "$HOME/tanker/project"
-          npm ci
+          ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm ci
           npx remotion browser ensure
       - name: Create sample with OpenCode free model, one bounded attempt
         working-directory: /home/runner/tanker/project
