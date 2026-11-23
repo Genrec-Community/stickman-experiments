@@ -1,0 +1,35 @@
+name: gpu-inspect
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gpu-inspect
+  cancel-in-progress: true
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-manufacturing-sample
+          run-id: 45187702134
+          github-token: ${{ github.token }}
+          path: saved
+      - name: Dump full file list and key files
+        run: |
+          mkdir -p proj && tar -xzf saved/project-source.tar.gz -C proj
+          cd proj/project
+          echo '=== FULL FILE LIST ==='
+          find . -type f -not -path '*/node_modules/*' | sort
+          echo '=== remotion.config.ts ==='; cat remotion.config.ts
+          echo '=== package.json ==='; cat package.json
+          echo '=== src dir ==='; ls -la src/ 2>/dev/null; ls src/ep3 2>/dev/null || echo 'no src/ep3'
+          echo '=== Root.tsx ==='; cat src/Root.tsx
+          echo '=== ep3 shots.json ==='; cat episodes/ep3/shots.json
+          echo '=== ep1 sound.json ==='; cat episodes/ep1/sound.json
+          echo '=== ep1 shots.json ==='; cat episodes/ep1/shots.json
+          echo '=== ep1 story.md ==='; cat episodes/ep1/story.md
+          echo '=== ep3 timing head ==='; head -c 1500 episodes/ep3/timing.json
