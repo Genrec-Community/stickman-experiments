@@ -1,0 +1,47 @@
+name: gpu-package
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gpu-package
+  cancel-in-progress: false
+jobs:
+  compress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-final-video
+          run-id: 45214762860
+          github-token: ${{ github.token }}
+          path: final
+      - name: Make chat-sized MP4 with continuous re-encoded audio
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          test -s final/gpu-manufacturing.mp4
+          ffprobe -v error -show_entries stream=codec_name,width,height -show_entries format=duration,size -of json final/gpu-manufacturing.mp4 | tee src-probe.json
+          ffmpeg -y -i final/gpu-manufacturing.mp4 -vf scale=720:1280 -c:v libx264 -crf 24 -preset medium -c:a aac -b:a 96k -movflags +faststart gpu-manufacturing-chat.mp4
+          ffprobe -v error -show_entries stream=codec_name,width,height,pix_fmt -show_entries format=duration,size -of json gpu-manufacturing-chat.mp4 | tee chat-probe.json
+          sha256sum final/gpu-manufacturing.mp4 gpu-manufacturing-chat.mp4 | tee SHA256SUMS
+          python3 - <<'PY'
+          import json
+          p=json.load(open('chat-probe.json'))
+          assert 20<float(p['format']['duration'])<100.1,p
+          assert any(s.get('width')==720 and s.get('height')==1280 and s['codec_name']=='h264' for s in p['streams']),p
+          assert any(s['codec_name']=='aac' for s in p['streams']),p
+          assert int(p['format']['size'])<15728640,p['format']['size']
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-chat-video
+          path: |
+            gpu-manufacturing-chat.mp4
+            chat-probe.json
+            src-probe.json
+            SHA256SUMS
+          retention-days: 14
