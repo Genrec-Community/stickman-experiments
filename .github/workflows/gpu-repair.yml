@@ -1,0 +1,193 @@
+name: gpu-manufacturing-repair
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gpu-manufacturing-skill-experiment
+  cancel-in-progress: false
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/remotion
+            ~/tanker-cache
+          key: tanker-drive-remotion-v1
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-manufacturing-sample
+          run-id: 45198056146
+          github-token: ${{ github.token }}
+          path: saved
+      - name: Prepare preserved project and free toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/gpu/out/stills"
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-core libnss3 libatk-bridge2.0-0 libgbm1 libasound2t64
+          npm install -g opencode-ai@1.19.6
+          tar -xzf saved/project-source.tar.gz -C "$HOME/gpu"
+          cd "$HOME/gpu/project"
+          ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm ci
+          npx remotion browser ensure
+          test -s episodes/ep3/story.md && test -s episodes/ep3/shots.json && test -s episodes/ep3/timing.json
+      - name: Scoped repair with OpenCode free model, one bounded attempt
+        working-directory: /home/runner/gpu
+        run: |
+          set -euo pipefail
+          cat > /home/runner/gpu/assignment.txt <<'BRIEF'
+          Repair task in the supplied animated-shorts project at ./project. Change into ./project first. Work only inside /home/runner/gpu. Do not access credentials, publish, upload, push, or modify any file under /tmp. Do not run TTS/model experiments; the narration is already final.
+
+          LOCKED, DO NOT MODIFY: episodes/ep3/story.md, episodes/ep3/shots.json, episodes/ep3/timing.json. These are final and verified (14 shots, 88.7 seconds of measured narration). Everything you write must match them exactly.
+
+          Write ONLY these missing pieces:
+          1. episodes/ep3/sound.json - music/SFX timeline for ep3. Follow the exact format of episodes/ep1/sound.json (bpm, key, music, amb keyed by shot id, sfx list of {shot, at, type}). First read scripts/sound.mjs and use only ambience and sfx names it actually supports. Cover all 14 shots.
+          2. The ep3 visual scene source under src/ep3/ - at least 4 files: cast.ts, sets.tsx, shots.tsx and Episode.tsx, following the structure and style of src/ep1/ (read src/ep1/Episode.tsx, src/ep1/shots.tsx, src/ep1/sets.tsx, src/ep1/cast.ts and the engine files src/engine/* first). One scene per shot in episodes/ep3/shots.json. Original three.js geometry via the supplied engine: silicon wafer, EUV lithography machine, dicing, GH100 die with five HBM3 stacks on a silicon interposer (H100 SXM5 module), and a GB202 die mounted on a circuit board with GDDR7 chips around it plus a cooler (RTX 5090). Visibly animated stages, moving parts, smooth camera moves, readable captions. Native 9:16. On-screen labels must say the fab and packaging scenes are simplified illustrations, not real footage or simulation.
+          3. Wire the Remotion composition 'Short' so it renders ep3 by default, the same way ep1 is currently wired (edit src/Root.tsx and/or src/index.ts only as needed for this).
+
+          Topic context for the scenes (already scripted; do not rewrite): how AI GPUs are made, from sand and quartz to TSMC 4N wafers, EUV lithography, dicing, then two packaging paths: H100 SXM5 (GH100 + 5x HBM3 on CoWoS interposer) and RTX 5090 (GB202 + GDDR7 on a PCB with cooler).
+
+          Prove the scenes render before finishing:
+          - render at least 4 representative stills into /home/runner/gpu/out/stills (use scripts/stills.mjs if it supports ep3, otherwise npx remotion still), software GL (--gl=swangle), concurrency 1-2
+          - render one preview video of at most 3 seconds to /home/runner/gpu/out/preview.mp4 with the same settings
+          Do NOT render the full video. Do NOT run scripts/voice.mjs or scripts/sound.mjs; downstream jobs do that. If a compile or render error appears, fix the scene code within this same attempt. One attempt only. Finish in 40 minutes maximum. Never claim files exist unless written and verified.
+          BRIEF
+          timeout -k 30 2400 opencode run -m opencode/deepseek-v4.1-flash-free "$(cat /home/runner/gpu/assignment.txt)" 2>&1 | tee /home/runner/gpu/out/build.log
+      - name: Verify creative output contract
+        run: |
+          set -euo pipefail
+          cd "$HOME/gpu/project"
+          test -s episodes/ep3/story.md
+          test -s episodes/ep3/shots.json
+          test -s episodes/ep3/timing.json
+          test -s episodes/ep3/sound.json
+          test "$(find src/ep3 -type f | wc -l)" -ge 3
+          test "$(find "$HOME/gpu/out/stills" -type f | wc -l)" -ge 4
+          test -s "$HOME/gpu/out/preview.mp4"
+          node -e 'const t=require(process.env.HOME+"/gpu/project/episodes/ep3/timing.json");if(!(t.total>20&&t.total<100.1))throw new Error("bad total "+t.total);console.log("ep3 total",t.total)'
+      - name: Preserve source for diagnosed continuation
+        if: always()
+        run: |
+          tar --exclude=node_modules --exclude=public --exclude=.git -czf "$HOME/gpu/out/project-source.tar.gz" -C "$HOME/gpu" project
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gpu-manufacturing-sample
+          path: /home/runner/gpu/out
+          retention-days: 7
+  audio:
+    needs: create
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-manufacturing-sample
+          path: saved
+      - run: tar -xzf saved/project-source.tar.gz
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            project/node_modules/@huggingface/transformers/.cache
+          key: tanker-restore-audio-v1
+      - name: Restore original free narration and soundtrack
+        working-directory: project
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+        run: |
+          npm ci
+          node scripts/voice.mjs ep3 am_michael 1.05
+          node scripts/sound.mjs ep3
+          node -e 'const t=require("./episodes/ep3/timing.json");if(!(t.total>20&&t.total<100.1))throw new Error("bad total "+t.total);console.log("ep3 total",t.total)'
+          tar --exclude=node_modules --exclude=out --exclude=.git -czf ../retained-scene.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-retained-scene
+          path: retained-scene.tar.gz
+          retention-days: 7
+  render:
+    needs: audio
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-retained-scene
+      - run: mkdir project && tar -xzf retained-scene.tar.gz -C project
+      - name: Install cached dependencies
+        working-directory: project
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+        run: npm ci
+      - name: Render retained scene segment
+        working-directory: project
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          npx remotion browser ensure
+          TOTAL=$(node -e 'const t=require("./episodes/ep3/timing.json");console.log(Math.ceil((t.total+0.7)*30))')
+          CHUNK=$(( (TOTAL+3)/4 ))
+          START=$((SHARD*CHUNK))
+          END=$((START+CHUNK-1))
+          if [ "$END" -ge "$TOTAL" ]; then END=$((TOTAL-1)); fi
+          npx remotion render src/index.ts Short ../part-${SHARD}.mp4 --frames=${START}-${END} --gl=swangle --concurrency=3 --log=info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-segment-${{ matrix.shard }}
+          path: part-*.mp4
+          retention-days: 7
+  finish:
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gpu-segment-*
+          merge-multiple: true
+          path: parts
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          cd parts
+          for n in 0 1 2 3; do printf "file 'part-%s.mp4'\n" "$n"; done > list.txt
+          ffmpeg -y -f concat -safe 0 -i list.txt -c copy -movflags +faststart ../gpu-manufacturing.mp4
+          ffprobe -v error -show_streams -show_format ../gpu-manufacturing.mp4 > ../probe.txt
+      - name: Verify final output
+        run: |
+          set -euo pipefail
+          ffprobe -v error -show_entries stream=codec_name,width,height,pix_fmt -show_entries format=duration,size -of json gpu-manufacturing.mp4 | tee probe.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('probe.json'))
+          assert 20<float(p['format']['duration'])<100.1,p
+          assert any(s.get('width')==1080 and s.get('height')==1920 and s['codec_name']=='h264' for s in p['streams']),p
+          assert any(s['codec_name']=='aac' for s in p['streams']),p
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-final-video
+          path: |
+            gpu-manufacturing.mp4
+            probe.txt
+          retention-days: 14
