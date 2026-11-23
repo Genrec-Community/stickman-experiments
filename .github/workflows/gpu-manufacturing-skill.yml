@@ -105,7 +105,9 @@ jobs:
           - TSMC CoWoS packaging platform (interposer + HBM integration): https://www.tsmc.com/english/dedicatedFoundry/technology/cowos
           Include the source and claim table in NOTES.md. Visuals must label fab and packaging scenes as simplified illustrations, not real footage or a physics/process simulation.
 
-          Aim for 135-165 words spoken naturally in under 60 seconds. Start with a surprising honest hook (for example, that an AI GPU starts as sand), keep the middle visual (wafer, lithography, dicing, then the two different packaging paths), and end on the honest distinction: same sand and same fab family, but different designs, memory and packages. Keep wording simple.
+          Aim for 135-165 words spoken naturally in under 95 seconds. Start with a surprising honest hook (for example, that an AI GPU starts as sand), keep the middle visual (wafer, lithography, dicing, then the two different packaging paths), and end on the honest distinction: same sand and same fab family, but different designs, memory and packages. Keep wording simple.
+
+          Required deliverables, all verified by the workflow before any render: episodes/ep3/story.md (spoken script), episodes/ep3/shots.json (shot list), episodes/ep3/timing.json (measured word timings), episodes/ep3/sound.json (music/SFX timeline, follow the format of episodes/ep1/sound.json), and the episode's visual scene source under src/ep3/ (cast, sets, shots and an Episode component, following the structure of src/ep1/) wired so the Remotion composition 'Short' renders ep3 by default. The scene source code is the main deliverable: do NOT stop after writing the script, shot list or timing data. Also required: at least 4 rendered stills in /home/runner/gpu/out/stills and one preview video of at most 3 seconds at /home/runner/gpu/out/preview.mp4.
 
           Sequence: write script and shot list; synthesize narration and soundtrack with the commands above; build the original GPU scenes with the supplied engine; render at least 4 representative stills into /home/runner/gpu/out/stills; validate the scene code renders by rendering one short preview of at most 3 seconds into /home/runner/gpu/out/preview.mp4; do NOT render the full video in this job (a later job renders it deterministically); verify audio files exist and timing.json parses; write /home/runner/gpu/out/NOTES.md with script, factual caveats, sources, renderer status and any unverified visual checks. Copy new episode source and scene source into /home/runner/gpu/out/source, not a transcript or tool logs. Do not state that a human approved anything. Do not stop with only a plan or script. Keep render costs bounded: software GL and concurrency 1-2 for the stills and preview. One attempt only, do not resume or rerun the model on failure. An obvious coding error may be fixed within this same attempt before the workflow ends. Finish in 55 minutes maximum. Never claim an MP4 exists unless verified.
           BRIEF
@@ -113,9 +115,15 @@ jobs:
       - name: Verify creative output contract
         run: |
           set -euo pipefail
-          test -d "$HOME/gpu/project/episodes/ep3"
-          test -s "$HOME/gpu/project/episodes/ep3/timing.json"
-          node -e 'const t=require(process.env.HOME+"/gpu/project/episodes/ep3/timing.json");if(!(t.total>20&&t.total<60.1))throw new Error("bad total "+JSON.stringify(t));console.log("ep3 total",t.total)'
+          cd "$HOME/gpu/project"
+          test -s episodes/ep3/story.md
+          test -s episodes/ep3/shots.json
+          test -s episodes/ep3/timing.json
+          test -s episodes/ep3/sound.json
+          test "$(find src/ep3 -type f | wc -l)" -ge 3
+          test "$(find "$HOME/gpu/out/stills" -type f | wc -l)" -ge 4
+          test -s "$HOME/gpu/out/preview.mp4"
+          node -e 'const t=require(process.env.HOME+"/gpu/project/episodes/ep3/timing.json");if(!(t.total>20&&t.total<100.1))throw new Error("bad total "+t.total);console.log("ep3 total",t.total)'
       - name: Preserve source for diagnosed continuation
         if: always()
         run: |
@@ -223,6 +231,112 @@ jobs:
           import json
           p=json.load(open('probe.json'))
           assert 20<float(p['format']['duration'])<60.1,p
+          assert any(s.get('width')==1080 and s.get('height')==1920 and s['codec_name']=='h264' for s in p['streams']),p
+          assert any(s['codec_name']=='aac' for s in p['streams']),p
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-final-video
+          path: |
+            gpu-manufacturing.mp4
+            probe.txt
+          retention-days: 14
+  audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-manufacturing-sample
+          path: saved
+      - run: tar -xzf saved/project-source.tar.gz
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            project/node_modules/@huggingface/transformers/.cache
+          key: tanker-restore-audio-v1
+      - name: Restore original free narration and soundtrack
+        working-directory: project
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+        run: |
+          npm ci
+          node scripts/voice.mjs ep3 am_michael 1.05
+          node scripts/sound.mjs ep3
+          node -e 'const t=require("./episodes/ep3/timing.json");if(!(t.total>20&&t.total<100.1))throw new Error("bad total "+t.total);console.log("ep3 total",t.total)'
+          tar --exclude=node_modules --exclude=out --exclude=.git -czf ../retained-scene.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-retained-scene
+          path: retained-scene.tar.gz
+          retention-days: 7
+  render:
+    needs: audio
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-retained-scene
+      - run: mkdir project && tar -xzf retained-scene.tar.gz -C project
+      - name: Install cached dependencies
+        working-directory: project
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+        run: npm ci
+      - name: Render retained scene segment
+        working-directory: project
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          npx remotion browser ensure
+          TOTAL=$(node -e 'const t=require("./episodes/ep3/timing.json");console.log(Math.ceil((t.total+0.7)*30))')
+          CHUNK=$(( (TOTAL+3)/4 ))
+          START=$((SHARD*CHUNK))
+          END=$((START+CHUNK-1))
+          if [ "$END" -ge "$TOTAL" ]; then END=$((TOTAL-1)); fi
+          npx remotion render src/index.ts Short ../part-${SHARD}.mp4 --frames=${START}-${END} --gl=swangle --concurrency=3 --log=info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-segment-${{ matrix.shard }}
+          path: part-*.mp4
+          retention-days: 7
+  finish:
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gpu-segment-*
+          merge-multiple: true
+          path: parts
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          cd parts
+          for n in 0 1 2 3; do printf "file 'part-%s.mp4'\n" "$n"; done > list.txt
+          ffmpeg -y -f concat -safe 0 -i list.txt -c copy -movflags +faststart ../gpu-manufacturing.mp4
+          ffprobe -v error -show_streams -show_format ../gpu-manufacturing.mp4 > ../probe.txt
+      - name: Verify final output
+        run: |
+          set -euo pipefail
+          ffprobe -v error -show_entries stream=codec_name,width,height,pix_fmt -show_entries format=duration,size -of json gpu-manufacturing.mp4 | tee probe.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('probe.json'))
+          assert 20<float(p['format']['duration'])<100.1,p
           assert any(s.get('width')==1080 and s.get('height')==1920 and s['codec_name']=='h264' for s in p['streams']),p
           assert any(s['codec_name']=='aac' for s in p['streams']),p
           PY
