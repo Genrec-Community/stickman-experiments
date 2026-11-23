@@ -15,21 +15,22 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: gpu-manufacturing-sample
-          run-id: 45187702134
+          run-id: 45198056146
           github-token: ${{ github.token }}
           path: saved
       - name: Dump full file list and key files
         run: |
+          echo '=== ARTIFACT TOP LEVEL ==='; find saved -type f | sort
           mkdir -p proj && tar -xzf saved/project-source.tar.gz -C proj
           cd proj/project
-          echo '=== FULL FILE LIST ==='
+          echo '=== FULL FILE LIST (no node_modules) ==='
           find . -type f -not -path '*/node_modules/*' | sort
-          echo '=== remotion.config.ts ==='; cat remotion.config.ts
-          echo '=== package.json ==='; cat package.json
-          echo '=== src dir ==='; ls -la src/ 2>/dev/null; ls src/ep3 2>/dev/null || echo 'no src/ep3'
-          echo '=== Root.tsx ==='; cat src/Root.tsx
-          echo '=== ep3 shots.json ==='; cat episodes/ep3/shots.json
-          echo '=== ep1 sound.json ==='; cat episodes/ep1/sound.json
-          echo '=== ep1 shots.json ==='; cat episodes/ep1/shots.json
-          echo '=== ep1 story.md ==='; cat episodes/ep1/story.md
-          echo '=== ep3 timing head ==='; head -c 1500 episodes/ep3/timing.json
+          echo '=== src/ep3 ==='; ls -la src/ep3 2>/dev/null || echo 'MISSING src/ep3'
+          echo '=== ep3 files ==='; ls -la episodes/ep3 2>/dev/null
+          echo '=== ep3 sound.json ==='; cat episodes/ep3/sound.json 2>/dev/null || echo 'MISSING sound.json'
+          echo '=== ep3 story.md ==='; cat episodes/ep3/story.md 2>/dev/null || echo 'MISSING story.md'
+          echo '=== ep3 shots.json ==='; cat episodes/ep3/shots.json 2>/dev/null || echo 'MISSING shots.json'
+          echo '=== ep3 timing summary ==='; node -e 'try{const t=require("./episodes/ep3/timing.json");console.log("total",t.total,"shots",t.shots.length)}catch(e){console.log("MISSING timing.json")}'
+          echo '=== ep1 sound.json (reference shape) ==='; cat episodes/ep1/sound.json 2>/dev/null || echo 'no ep1 sound.json'
+          echo '=== src top ==='; find src -maxdepth 1 -type f | sort
+          echo '=== stills/preview in tar ==='; find . -name '*.mp4' -o -name 'still*' -type f 2>/dev/null | grep -v node_modules | head
