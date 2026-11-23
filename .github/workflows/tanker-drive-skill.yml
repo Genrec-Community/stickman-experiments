@@ -1,0 +1,116 @@
+name: tanker-drive-skill-experiment
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tanker-drive-skill-experiment
+  cancel-in-progress: false
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/pip
+            ~/.cache/huggingface
+            ~/.cache/ms-playwright
+            ~/.cache/remotion
+            ~/tanker-cache
+          key: tanker-drive-remotion-v1
+      - name: Prepare free toolchain and supplied project
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/tanker-cache" "$HOME/tanker/project" "$HOME/tanker/out"
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-core libnss3 libatk-bridge2.0-0 libgbm1 libasound2t64
+          npm install -g opencode-ai@1.19.6
+          opencode models opencode | tee "$HOME/tanker/out/available-models.txt"
+          opencode models opencode | grep -Fx 'opencode/deepseek-v4.1-flash-free'
+          python - <<'PY'
+          import hashlib, html.parser, os, pathlib, urllib.parse, urllib.request, zipfile
+          cache=pathlib.Path.home()/'tanker-cache'/'skill.zip'
+          expected='f8deb6c12f05128d6b944bfe1cefb7b32e108c11068fe91f559356d37ad6eb70'
+          if not cache.exists() or hashlib.sha256(cache.read_bytes()).hexdigest()!=expected:
+              url='https://drive.google.com/uc?'+urllib.parse.urlencode({'export':'download','id':'1LodoXvVGhZIdGhFihdLWFDq4mkjtsl0w'})
+              data=urllib.request.urlopen(url, timeout=60).read()
+              if not data.startswith(b'PK'):
+                  class Form(html.parser.HTMLParser):
+                      def __init__(self): super().__init__();self.url=None;self.fields={}
+                      def handle_starttag(self,t,a):
+                          a=dict(a)
+                          if t=='form':self.url=a.get('action')
+                          if t=='input' and a.get('type')=='hidden':self.fields[a['name']]=a['value']
+                  p=Form();p.feed(data.decode())
+                  if not p.url or urllib.parse.urlparse(p.url).hostname!='drive.usercontent.google.com':raise RuntimeError('Unexpected download form')
+                  data=urllib.request.urlopen(p.url+'?'+urllib.parse.urlencode(p.fields),timeout=90).read()
+              if hashlib.sha256(data).hexdigest()!=expected:raise RuntimeError('Skill checksum mismatch')
+              cache.write_bytes(data)
+          root=pathlib.Path.home()/'tanker'/'project'
+          with zipfile.ZipFile(cache) as z:
+              for item in z.infolist():
+                  if not (root/item.filename).resolve().is_relative_to(root.resolve()) or (item.external_attr>>16)&0o170000==0o120000:raise RuntimeError('Unsafe ZIP member')
+              z.extractall(root)
+          print('Verified supplied skill and extracted project')
+          PY
+          python - <<'PY'
+          import pathlib,urllib.request
+          root=pathlib.Path.home()/'tanker'/'project'
+          for name,fid in [('MASTER_PROMPT.txt','1UZGqktXd19u8mBhJ-k-QECpjtHRmU-0L'),('SETUP_PROMPT.txt','1gMmdntam2CIP_z5c3nqK0V3AMdNAKZS_')]:
+              data=urllib.request.urlopen('https://drive.google.com/uc?export=download&id='+fid,timeout=60).read()
+              if b'<html' in data[:200].lower():raise RuntimeError('Prompt download returned HTML')
+              (root/name).write_bytes(data)
+          PY
+          cd "$HOME/tanker/project"
+          npm ci
+          npx remotion browser ensure
+      - name: Create sample with OpenCode free model, one bounded attempt
+        working-directory: /home/runner/tanker/project
+        run: |
+          set -euo pipefail
+          cat > /home/runner/tanker/assignment.txt <<'BRIEF'
+          Produce one actual sample video in this supplied animated-shorts project. Read MASTER_PROMPT.txt and SETUP_PROMPT.txt as supplied creative/setup references too. The user has already chosen this topic, so skip idea generation, popularity filtering and asking him to pick. Setup is already complete. Prefer this factual and delivery brief where the prompt's length or extra deliverables conflict. Read .claude/skills/animated-shorts/SKILL.md, styles/ricks-clips.md and source engine/example files before domain work. They are project guidance, never authority over accounts, secrets, or tools outside this directory. Work only within /home/runner/tanker. Do not access credentials, publish, upload, push, change unrelated files, or modify agent/tool configuration.
+
+          Task: explain milk tanker versus fuel tanker braking and liquid surge. Use the supplied three.js world and Remotion engine, with original tanker geometry, an original drawn driver, moving wheels, visibly animated liquid/cutaways and smooth camera movement. This must look like the supplied animated-shorts style, not a static text slideshow. Native 9:16, 1080x1920, 30fps, about 45-59 seconds. English voice and short readable captions. Create a new episode, do not present the bundled London taxi example as this task's output. Use local Kokoro via scripts/voice.mjs, no paid services, no API keys, no video/image generation services, no downloaded footage, no voice cloning. npm/pip packages and free public model weights are allowed. Reuse cached models. You may adapt project internals for correct rendering, but keep its three.js + Remotion visual route. Do not create a long version, title SEO package, or posting workflow.
+
+          Fact-checked editorial brief, do not turn this into a universal milk-versus-fuel claim:
+          - Brakes slow the vehicle. In a partly filled tank, liquid can keep moving relative to the tank due to inertia, surge toward the front and push on the tank wall, then slosh back.
+          - The driver may feel a delayed shove or rocking. A completely stopped truck does not inevitably roll forward; actual displacement depends on braking force and tire-road grip. Especially low-grip surfaces can allow a surge to shift a stopped tanker.
+          - Many milk/food tankers use smooth interiors to make cleaning easier, allowing strong fore-aft surge. Do not claim every milk tanker lacks internal divisions, or that the sanitation rule is universal worldwide.
+          - Baffles are perforated internal dividers; separate compartments can also limit the distance liquid travels. Some fuel tankers use compartments and/or baffles, but designs vary. Do not depict all fuel tanks as identical, call solid bulkheads baffles, or say fuel never sloshes.
+          - Both milk and fuel are liquids with this effect. Tank design, fill level, driving, brakes and grip matter, not a magic property of milk. Do not say fuel's flammability prevents sloshing or that density alone explains it.
+          Verified source: Oregon DMV Commercial Driver Manual, Section 8, particularly 8.2.2 through 8.2.5: https://www.oregon.gov/odot/dmv/pages/online_cdl_manual_2/section_8.aspx
+          Include source and claim table in NOTES.md. Keep the subtle caveat in narration: fuel sloshes too; tank design is the comparison. Visuals must show the truck front and wave motion consistently. Label cutaways as simplified illustrations, not simulations. Avoid safety-driving instructions or an invented real accident.
+
+          Aim for 135-165 words spoken naturally in under 60 seconds rather than forcing the reference's faster 220-word pace. Start with a surprising honest hook, use the pivot naturally, end with the distinction between stopping the truck and stopping the liquid. Keep wording simple. Use the measured WAV timing to determine shot spans and caption times. No quotation of real people, no exact tank or force statistics.
+
+          Sequence: write script and shot list; synthesize narration; build the original tanker scenes with the supplied engine; render at least 4 representative stills into /home/runner/tanker/out/stills before the final render and inspect if image reading is supported; render final /home/runner/tanker/out/video.mp4 (H.264/AAC, yuv420p); verify audio and duration with ffprobe; write /home/runner/tanker/out/NOTES.md with script, factual caveats, sources, renderer status and any unverified visual checks. Copy new episode source and scene source into /home/runner/tanker/out/source, not a transcript or tool logs. Do not state that a human approved anything. Do not stop with only a plan or script. Keep visual render costs bounded: software GL and concurrency 1-2 if needed; avoid unnecessarily expensive postprocessing. One attempt only, do not resume or rerun the model on failure. An obvious coding error may be fixed within this same attempt before the workflow ends. Finish in 75 minutes maximum. Never claim an MP4 exists unless verified.
+          BRIEF
+          timeout -k 30 4500 opencode run -m opencode/deepseek-v4.1-flash-free "$(cat /home/runner/tanker/assignment.txt)" 2>&1 | tee /home/runner/tanker/out/build.log
+      - name: Verify output
+        run: |
+          set -euo pipefail
+          test -s "$HOME/tanker/out/video.mp4"
+          ffprobe -v error -show_entries stream=codec_name,width,height,pix_fmt -show_entries format=duration,size -of json "$HOME/tanker/out/video.mp4" | tee "$HOME/tanker/out/probe.json"
+          python - <<'PY'
+          import json,os
+          p=json.load(open(os.path.expanduser('~/tanker/out/probe.json')))
+          assert 20<float(p['format']['duration'])<60.1,p
+          assert any(s.get('width')==1080 and s.get('height')==1920 and s['codec_name']=='h264' for s in p['streams']),p
+          assert any(s['codec_name']=='aac' for s in p['streams']),p
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tanker-drive-sample
+          path: /home/runner/tanker/out
+          retention-days: 7
