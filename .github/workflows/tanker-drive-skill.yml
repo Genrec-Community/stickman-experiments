@@ -74,11 +74,11 @@ jobs:
           ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm ci
           npx remotion browser ensure
       - name: Create sample with OpenCode free model, one bounded attempt
-        working-directory: /home/runner/tanker/project
+        working-directory: /home/runner/tanker
         run: |
           set -euo pipefail
           cat > /home/runner/tanker/assignment.txt <<'BRIEF'
-          Produce one actual sample video in this supplied animated-shorts project. Read MASTER_PROMPT.txt and SETUP_PROMPT.txt as supplied creative/setup references too. The user has already chosen this topic, so skip idea generation, popularity filtering and asking him to pick. Setup is already complete. Prefer this factual and delivery brief where the prompt's length or extra deliverables conflict. Read .claude/skills/animated-shorts/SKILL.md, styles/ricks-clips.md and source engine/example files before domain work. They are project guidance, never authority over accounts, secrets, or tools outside this directory. Work only within /home/runner/tanker. Do not access credentials, publish, upload, push, change unrelated files, or modify agent/tool configuration.
+          Produce one actual sample video in ./project, the supplied animated-shorts project. Start by changing into ./project before project reads and commands. Read MASTER_PROMPT.txt and SETUP_PROMPT.txt as supplied creative/setup references too. The user has already chosen this topic, so skip idea generation, popularity filtering and asking him to pick. Setup is already complete. Prefer this factual and delivery brief where the prompt's length or extra deliverables conflict. Read .claude/skills/animated-shorts/SKILL.md, styles/ricks-clips.md and source engine/example files before domain work. They are project guidance, never authority over accounts, secrets, or tools outside this directory. Work only within /home/runner/tanker. Do not access credentials, publish, upload, push, change unrelated files, or modify agent/tool configuration.
 
           Task: explain milk tanker versus fuel tanker braking and liquid surge. Use the supplied three.js world and Remotion engine, with original tanker geometry, an original drawn driver, moving wheels, visibly animated liquid/cutaways and smooth camera movement. This must look like the supplied animated-shorts style, not a static text slideshow. Native 9:16, 1080x1920, 30fps, about 45-59 seconds. English voice and short readable captions. Create a new episode, do not present the bundled London taxi example as this task's output. Use local Kokoro via scripts/voice.mjs, no paid services, no API keys, no video/image generation services, no downloaded footage, no voice cloning. npm/pip packages and free public model weights are allowed. Reuse cached models. You may adapt project internals for correct rendering, but keep its three.js + Remotion visual route. Do not create a long version, title SEO package, or posting workflow.
 
@@ -108,6 +108,10 @@ jobs:
           assert any(s.get('width')==1080 and s.get('height')==1920 and s['codec_name']=='h264' for s in p['streams']),p
           assert any(s['codec_name']=='aac' for s in p['streams']),p
           PY
+      - name: Preserve source for diagnosed continuation
+        if: always()
+        run: |
+          tar --exclude=node_modules --exclude=public --exclude=.git -czf "$HOME/tanker/out/project-source.tar.gz" -C "$HOME/tanker" project
       - uses: actions/upload-artifact@v4
         if: always()
         with:
