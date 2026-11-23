@@ -1,4 +1,4 @@
-name: gpu-manufacturing-repair
+name: gpu-manufacturing-repair2
 on:
   workflow_dispatch:
 permissions:
@@ -10,7 +10,7 @@ concurrency:
 jobs:
   create:
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 45
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -25,7 +25,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: gpu-manufacturing-sample
-          run-id: 45198056146
+          run-id: 45204506370
           github-token: ${{ github.token }}
           path: saved
       - name: Prepare preserved project and free toolchain
@@ -45,23 +45,23 @@ jobs:
         run: |
           set -euo pipefail
           cat > /home/runner/gpu/assignment.txt <<'BRIEF'
-          Repair task in the supplied animated-shorts project at ./project. Change into ./project first. Work only inside /home/runner/gpu. Do not access credentials, publish, upload, push, or modify any file under /tmp. Do not run TTS/model experiments; the narration is already final.
+          Compile-fix task in the supplied animated-shorts project at ./project. Change into ./project first. Work only inside /home/runner/gpu. Do not access credentials, publish, upload, push, or modify any file under /tmp. Do not run TTS/model experiments.
 
-          LOCKED, DO NOT MODIFY: episodes/ep3/story.md, episodes/ep3/shots.json, episodes/ep3/timing.json. These are final and verified (14 shots, 88.7 seconds of measured narration). Everything you write must match them exactly.
+          LOCKED, DO NOT MODIFY: episodes/ep3/story.md, episodes/ep3/shots.json, episodes/ep3/timing.json, episodes/ep3/sound.json. The ep3 scene source under src/ep3/ (cast.ts, sets.tsx, shots.tsx, Episode.tsx) and the src/Root.tsx wiring were already written and are conceptually final: change them only to fix compile/render errors, not to redesign.
 
-          Write ONLY these missing pieces:
-          1. episodes/ep3/sound.json - music/SFX timeline for ep3. Follow the exact format of episodes/ep1/sound.json (bpm, key, music, amb keyed by shot id, sfx list of {shot, at, type}). First read scripts/sound.mjs and use only ambience and sfx names it actually supports. Cover all 14 shots.
-          2. The ep3 visual scene source under src/ep3/ - at least 4 files: cast.ts, sets.tsx, shots.tsx and Episode.tsx, following the structure and style of src/ep1/ (read src/ep1/Episode.tsx, src/ep1/shots.tsx, src/ep1/sets.tsx, src/ep1/cast.ts and the engine files src/engine/* first). One scene per shot in episodes/ep3/shots.json. Original three.js geometry via the supplied engine: silicon wafer, EUV lithography machine, dicing, GH100 die with five HBM3 stacks on a silicon interposer (H100 SXM5 module), and a GB202 die mounted on a circuit board with GDDR7 chips around it plus a cooler (RTX 5090). Visibly animated stages, moving parts, smooth camera moves, readable captions. Native 9:16. On-screen labels must say the fab and packaging scenes are simplified illustrations, not real footage or simulation.
-          3. Wire the Remotion composition 'Short' so it renders ep3 by default, the same way ep1 is currently wired (edit src/Root.tsx and/or src/index.ts only as needed for this).
+          The previous attempt ended with exactly one known error:
+          src/ep3/sets.tsx(935,56): error TS2322: Type 'boolean' is not assignable to type 'number'.
 
-          Topic context for the scenes (already scripted; do not rewrite): how AI GPUs are made, from sand and quartz to TSMC 4N wafers, EUV lithography, dicing, then two packaging paths: H100 SXM5 (GH100 + 5x HBM3 on CoWoS interposer) and RTX 5090 (GB202 + GDDR7 on a PCB with cooler).
-
-          Prove the scenes render before finishing:
-          - render at least 4 representative stills into /home/runner/gpu/out/stills (use scripts/stills.mjs if it supports ep3, otherwise npx remotion still), software GL (--gl=swangle), concurrency 1-2
-          - render one preview video of at most 3 seconds to /home/runner/gpu/out/preview.mp4 with the same settings
-          Do NOT render the full video. Do NOT run scripts/voice.mjs or scripts/sound.mjs; downstream jobs do that. If a compile or render error appears, fix the scene code within this same attempt. One attempt only. Finish in 40 minutes maximum. Never claim files exist unless written and verified.
+          Do this, in order:
+          1. Run: npx tsc --noEmit 2>&1 | head -50
+          2. Fix every reported error with the smallest possible change (the sets.tsx:935 error is a boolean passed where a number is expected; pass a number or convert with a ternary, matching nearby code).
+          3. Re-run npx tsc --noEmit until it exits clean.
+          4. Render at least 4 representative stills into /home/runner/gpu/out/stills (use scripts/stills.mjs if it supports ep3, otherwise npx remotion still src/index.ts Short), software GL (--gl=swangle), concurrency 1-2.
+          5. Render one preview video of at most 3 seconds to /home/runner/gpu/out/preview.mp4 with the same settings.
+          6. If a render error appears, fix the scene code with the smallest change and retry, within this same attempt.
+          Do NOT render the full video. Do NOT run scripts/voice.mjs or scripts/sound.mjs. One attempt only. Finish in 12 minutes maximum. Never claim files exist unless written and verified.
           BRIEF
-          timeout -k 30 2400 opencode run -m opencode/deepseek-v4.1-flash-free "$(cat /home/runner/gpu/assignment.txt)" 2>&1 | tee /home/runner/gpu/out/build.log
+          timeout -k 30 900 opencode run -m opencode/deepseek-v4.1-flash-free "$(cat /home/runner/gpu/assignment.txt)" 2>&1 | tee /home/runner/gpu/out/build.log
       - name: Verify creative output contract
         run: |
           set -euo pipefail
