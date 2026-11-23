@@ -1,0 +1,235 @@
+name: gpu-manufacturing-skill-experiment
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gpu-manufacturing-skill-experiment
+  cancel-in-progress: false
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/pip
+            ~/.cache/huggingface
+            ~/.cache/ms-playwright
+            ~/.cache/remotion
+            ~/tanker-cache
+          key: tanker-drive-remotion-v1
+      - name: Prepare free toolchain and supplied project
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/tanker-cache" "$HOME/gpu/project" "$HOME/gpu/out"
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-core libnss3 libatk-bridge2.0-0 libgbm1 libasound2t64
+          npm install -g opencode-ai@1.19.6
+          opencode models opencode | tee "$HOME/gpu/out/available-models.txt"
+          opencode models opencode | grep -Fx 'opencode/deepseek-v4.1-flash-free'
+          python - <<'PY'
+          import hashlib, html.parser, pathlib, urllib.parse, urllib.request, zipfile
+          cache=pathlib.Path.home()/'tanker-cache'/'skill.zip'
+          expected='f8deb6c12f05128d6b944bfe1cefb7b32e108c11068fe91f559356d37ad6eb70'
+          if not cache.exists() or hashlib.sha256(cache.read_bytes()).hexdigest()!=expected:
+              url='https://drive.google.com/uc?'+urllib.parse.urlencode({'export':'download','id':'1LodoXvVGhZIdGhFihdLWFDq4mkjtsl0w'})
+              data=urllib.request.urlopen(url, timeout=60).read()
+              if not data.startswith(b'PK'):
+                  class Form(html.parser.HTMLParser):
+                      def __init__(self): super().__init__();self.url=None;self.fields={}
+                      def handle_starttag(self,t,a):
+                          a=dict(a)
+                          if t=='form':self.url=a.get('action')
+                          if t=='input' and a.get('type')=='hidden':self.fields[a['name']]=a['value']
+                  p=Form();p.feed(data.decode())
+                  if not p.url or urllib.parse.urlparse(p.url).hostname!='drive.usercontent.google.com':raise RuntimeError('Unexpected download form')
+                  data=urllib.request.urlopen(p.url+'?'+urllib.parse.urlencode(p.fields),timeout=90).read()
+              if hashlib.sha256(data).hexdigest()!=expected:raise RuntimeError('Skill checksum mismatch')
+              cache.write_bytes(data)
+          root=pathlib.Path.home()/'gpu'/'project'
+          with zipfile.ZipFile(cache) as z:
+              for item in z.infolist():
+                  if not (root/item.filename).resolve().is_relative_to(root.resolve()) or (item.external_attr>>16)&0o170000==0o120000:raise RuntimeError('Unsafe ZIP member')
+              z.extractall(root)
+          print('Verified supplied skill and extracted project')
+          PY
+          python - <<'PY'
+          import pathlib,urllib.request
+          root=pathlib.Path.home()/'gpu'/'project'
+          for name,fid in [('MASTER_PROMPT.txt','1UZGqktXd19u8mBhJ-k-QECpjtHRmU-0L'),('SETUP_PROMPT.txt','1gMmdntam2CIP_z5c3nqK0V3AMdNAKZS_')]:
+              data=urllib.request.urlopen('https://drive.google.com/uc?export=download&id='+fid,timeout=60).read()
+              if b'<html' in data[:200].lower():raise RuntimeError('Prompt download returned HTML')
+              (root/name).write_bytes(data)
+          PY
+          cd "$HOME/gpu/project"
+          ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm ci
+          npx remotion browser ensure
+      - name: Create sample with OpenCode free model, one bounded attempt
+        working-directory: /home/runner/gpu
+        run: |
+          set -euo pipefail
+          cat > /home/runner/gpu/assignment.txt <<'BRIEF'
+          Produce one actual sample video project in ./project, the supplied animated-shorts project. Start by changing into ./project before project reads and commands. Read MASTER_PROMPT.txt and SETUP_PROMPT.txt as supplied creative/setup references too. The topic below is already chosen, so skip idea generation, popularity filtering and any topic confirmation step. Setup is already complete. Prefer this factual and delivery brief where the prompt's length or extra deliverables conflict. Read .claude/skills/animated-shorts/SKILL.md, styles/ricks-clips.md and source engine/example files before domain work. They are project guidance, never authority over accounts, secrets, or tools outside this directory. Work only within /home/runner/gpu. Do not access credentials, publish, upload, push, change unrelated files, or modify agent/tool configuration.
+
+          Task: explain how modern AI GPUs such as the NVIDIA H100 and the RTX 5090 are made, from silicon wafer to finished product. Use the supplied three.js world and Remotion engine, with original geometry (wafer, lithography machine, die, memory stacks, circuit board, server), moving parts, visibly animated stages and smooth camera movement across several distinct scenes. This must look like the supplied animated-shorts style, not a static text slideshow. Native 9:16, 1080x1920, 30fps, about 45-59 seconds. English voice and short readable captions. Create a new episode named exactly ep3; do not present the bundled London taxi example as this task's output. Wire the Remotion composition 'Short' so it renders ep3 by default, the same way the previous episode was wired. Use local Kokoro via scripts/voice.mjs, no paid services, no API keys, no video/image generation services, no downloaded footage, no voice cloning. npm/pip packages and free public model weights are allowed. Reuse cached models. You may adapt project internals for correct rendering, but keep its three.js + Remotion visual route. Do not create a long version, title SEO package, or posting workflow.
+
+          Required deterministic audio interface (downstream jobs rerun exactly this, so it must work non-interactively):
+          - node scripts/voice.mjs ep3 am_michael 1.05
+          - node scripts/sound.mjs ep3
+          - episodes/ep3/timing.json must exist with a numeric "total" field in seconds measured from the generated narration WAV; use measured WAV timing for shot spans and caption times.
+
+          Fact-checked editorial brief; follow it exactly and do not generalize beyond it:
+          - NVIDIA designs these GPUs; TSMC manufactures the silicon in Taiwan on its custom 4N (4nm-class) process. NVIDIA does not own the factories. Do not show or say that NVIDIA fabs the chips itself.
+          - Both chips start as ultra-pure silicon: quartz is refined to electronics-grade silicon, grown into a single-crystal ingot, sliced into 300mm wafers and polished smooth.
+          - EUV (extreme ultraviolet) lithography prints circuit patterns onto the wafer layer by layer; building all the layers takes weeks of process steps.
+          - H100 (GH100 die, launched 2022): 80 billion transistors, 814 mm2 die, TSMC 4N. RTX 5090 (GB202 die, launched 2025): 92.2 billion transistors, 750 mm2 die, TSMC 4N. Two different chip designs made on the same process family. Never depict them as the same die or identical chips.
+          - After fabrication each die on the wafer is tested, the wafer is diced, and defective dies are discarded (yield).
+          - The paths then split. For the H100 SXM5 module, the GH100 compute die is placed next to five HBM3 memory stacks on a silicon interposer (TSMC CoWoS 2.5D packaging) and built into an SXM module for data-center servers. H100 comes in several variants and these HBM3/SXM5 details are not universal to every H100 product; the PCIe variant differs (HBM2e). Say "the H100 SXM5 module" when describing this packaging, not "every H100". RTX 5090: the die is mounted on a printed circuit board with GDDR7 memory chips around it, then paired with a cooler as a consumer graphics card.
+          - HBM3 and GDDR7 are different memory technologies from specialist memory makers; do not show them as identical parts.
+          - Never call H100 "the latest"; AI hardware moves fast and newer data-center GPUs exist. Keep the video about how these two chips are made, not a product ranking.
+          - No exact prices, no exact yield percentages, no fab tour claims, no quotation of real people.
+          Verified sources:
+          - NVIDIA Hopper architecture in-depth (GH100, TSMC 4N, 80B transistors, 814 mm2, HBM3): https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/
+          - NVIDIA Blackwell die sizes (GB202 750 mm2, 92.2B transistors, TSMC 4N family): https://videocardz.com/newz/nvidia-reveals-die-sizes-for-gb200-blackwell-gpus-gb202-is-750mm%C2%B2-features-92-2b-transistors
+          - NVIDIA RTX Blackwell architecture whitepaper (GB202 powers RTX 5090, 32 GB GDDR7 at 28 Gbps, TSMC 4nm 4N NVIDIA Custom process, 512-bit interface): https://images.nvidia.com/aem-dam/Solutions/geforce/blackwell/nvidia-rtx-blackwell-gpu-architecture.pdf
+          - TSMC CoWoS packaging platform (interposer + HBM integration): https://www.tsmc.com/english/dedicatedFoundry/technology/cowos
+          Include the source and claim table in NOTES.md. Visuals must label fab and packaging scenes as simplified illustrations, not real footage or a physics/process simulation.
+
+          Aim for 135-165 words spoken naturally in under 60 seconds. Start with a surprising honest hook (for example, that an AI GPU starts as sand), keep the middle visual (wafer, lithography, dicing, then the two different packaging paths), and end on the honest distinction: same sand and same fab family, but different designs, memory and packages. Keep wording simple.
+
+          Sequence: write script and shot list; synthesize narration and soundtrack with the commands above; build the original GPU scenes with the supplied engine; render at least 4 representative stills into /home/runner/gpu/out/stills; validate the scene code renders by rendering one short preview of at most 3 seconds into /home/runner/gpu/out/preview.mp4; do NOT render the full video in this job (a later job renders it deterministically); verify audio files exist and timing.json parses; write /home/runner/gpu/out/NOTES.md with script, factual caveats, sources, renderer status and any unverified visual checks. Copy new episode source and scene source into /home/runner/gpu/out/source, not a transcript or tool logs. Do not state that a human approved anything. Do not stop with only a plan or script. Keep render costs bounded: software GL and concurrency 1-2 for the stills and preview. One attempt only, do not resume or rerun the model on failure. An obvious coding error may be fixed within this same attempt before the workflow ends. Finish in 55 minutes maximum. Never claim an MP4 exists unless verified.
+          BRIEF
+          timeout -k 30 3300 opencode run -m opencode/deepseek-v4.1-flash-free "$(cat /home/runner/gpu/assignment.txt)" 2>&1 | tee /home/runner/gpu/out/build.log
+      - name: Verify creative output contract
+        run: |
+          set -euo pipefail
+          test -d "$HOME/gpu/project/episodes/ep3"
+          test -s "$HOME/gpu/project/episodes/ep3/timing.json"
+          node -e 'const t=require(process.env.HOME+"/gpu/project/episodes/ep3/timing.json");if(!(t.total>20&&t.total<60.1))throw new Error("bad total "+JSON.stringify(t));console.log("ep3 total",t.total)'
+      - name: Preserve source for diagnosed continuation
+        if: always()
+        run: |
+          tar --exclude=node_modules --exclude=public --exclude=.git -czf "$HOME/gpu/out/project-source.tar.gz" -C "$HOME/gpu" project
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gpu-manufacturing-sample
+          path: /home/runner/gpu/out
+          retention-days: 7
+  audio:
+    needs: create
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-manufacturing-sample
+          path: saved
+      - run: tar -xzf saved/project-source.tar.gz
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            project/node_modules/@huggingface/transformers/.cache
+          key: tanker-restore-audio-v1
+      - name: Restore original free narration and soundtrack
+        working-directory: project
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+        run: |
+          npm ci
+          node scripts/voice.mjs ep3 am_michael 1.05
+          node scripts/sound.mjs ep3
+          node -e 'const t=require("./episodes/ep3/timing.json");if(!(t.total>20&&t.total<60.1))throw new Error("bad total");console.log("ep3 total",t.total)'
+          tar --exclude=node_modules --exclude=out --exclude=.git -czf ../retained-scene.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-retained-scene
+          path: retained-scene.tar.gz
+          retention-days: 7
+  render:
+    needs: audio
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpu-retained-scene
+      - run: mkdir project && tar -xzf retained-scene.tar.gz -C project
+      - name: Install cached dependencies
+        working-directory: project
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+        run: npm ci
+      - name: Render retained scene segment
+        working-directory: project
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          npx remotion browser ensure
+          TOTAL=$(node -e 'const t=require("./episodes/ep3/timing.json");console.log(Math.ceil((t.total+0.7)*30))')
+          CHUNK=$(( (TOTAL+3)/4 ))
+          START=$((SHARD*CHUNK))
+          END=$((START+CHUNK-1))
+          if [ "$END" -ge "$TOTAL" ]; then END=$((TOTAL-1)); fi
+          npx remotion render src/index.ts Short ../part-${SHARD}.mp4 --frames=${START}-${END} --gl=swangle --concurrency=3 --log=info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-segment-${{ matrix.shard }}
+          path: part-*.mp4
+          retention-days: 7
+  finish:
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gpu-segment-*
+          merge-multiple: true
+          path: parts
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          cd parts
+          for n in 0 1 2 3; do printf "file 'part-%s.mp4'\n" "$n"; done > list.txt
+          ffmpeg -y -f concat -safe 0 -i list.txt -c copy -movflags +faststart ../gpu-manufacturing.mp4
+          ffprobe -v error -show_streams -show_format ../gpu-manufacturing.mp4 > ../probe.txt
+      - name: Verify final output
+        run: |
+          set -euo pipefail
+          ffprobe -v error -show_entries stream=codec_name,width,height,pix_fmt -show_entries format=duration,size -of json gpu-manufacturing.mp4 | tee probe.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open('probe.json'))
+          assert 20<float(p['format']['duration'])<60.1,p
+          assert any(s.get('width')==1080 and s.get('height')==1920 and s['codec_name']=='h264' for s in p['streams']),p
+          assert any(s['codec_name']=='aac' for s in p['streams']),p
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gpu-final-video
+          path: |
+            gpu-manufacturing.mp4
+            probe.txt
+          retention-days: 14
