@@ -1,0 +1,80 @@
+name: humanity-2070-stick-scene
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: humanity-2070-stick-scene
+  cancel-in-progress: false
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare pinned stick-scene and free tools
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/future/out"
+          cd "$HOME/future"
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg espeak-ng fonts-dejavu-core
+          git clone https://github.com/nilbuild/stick-scene.git skill
+          git -C skill checkout ca84311177a020c2dff7dfd9cb2e7b786288c1ab
+          npm install playwright@1.56.1
+          npx playwright install --with-deps chromium
+          npm install -g opencode-ai@1.19.6
+          pip install edge-tts
+          opencode models opencode | tee out/models.txt
+          grep -Fx opencode/hy4-flash-free out/models.txt
+      - name: Build original scene source with free OpenCode
+        working-directory: /home/runner/future
+        run: |
+          cat > assignment.txt <<'BRIEF'
+          Make one new finished narrated video about how humanity COULD live in2070 using the exact supplied nilbuild/stick-scene skill. This is a creative generation request, not publication. Work only in /home/runner/future. No credentials, accounts, pushing, publishing, subscriptions, paid services or external image/video services. Installed ./skill is pinned original source. Read skill/SKILL.md and references/craft.md fully plus template and an example BEFORE making scenes. Follow its actual rig, ink-and-butter style, smoothing, drawing order, hand/head safety, props, contact and motion tests. Keep runtime/stick.js byte-for-byte unchanged. The topic is chosen; make the video directly rather than waiting for metaphor selection.
+
+          Deliverable: output.mp4 native1080x1920/30fps,45-60seconds, English narration, readable short captions; saved original source, audio and timing, contact sheet, NOTES.md, all in ./out. This is NOT3D, not a talking presenter, not slides. Use the skill's real RIG figures and props in at least7 custom animated scenes (5-8sec each), with actions/results, not copied example scenes. Adapt its landscape scene stage into a portrait layout with generous whitespace, an honest small heading, a large central ink-and-paper animation, large lower-middle captions. Fill enough of the portrait to read on a phone; do not distort the rig or crop props. No company logos.
+
+          Editorial: use an opening like 'A day in2070 could look like this. But it is one possible future, not a prediction.' Then7or8visual beats spanning AI helping human work, cleaner energy and cities adapting to heat, care/assistive tools, learning, unequal access, and people choosing rules together. Closing: technology alone does not decide who benefits. Do NOT claim precise future population/temperature/prices/lifespans, universal abundance, guaranteed cures, immortality, colonized planets, AI takeover, or that every country has the same future. Use could/might/if throughout. All visuals are imagined scenarios, not evidence. No real-person quotes, invented studies or forecasts. Keep spoken text125-145words and duration45-60sec.
+
+          Use installed edge-tts en-US-AndrewMultilingualNeural at+12% for narration. If unavailable after one bounded retry use local espeak-ng and record that actual fallback honestly, never silently swap or claim Andrew. No voice cloning. Generate per-shot audio and measure it via ffprobe, concatenate, align each scene/caption to actual measured audio (do not estimate shot duration). Add a quiet original synthesized sound bed if practical, never louder than narration. No downloaded music/media/fonts needed, use installed DejaVu/system sans for large video headings/captions and the original skill's default ink text with no-font enabled.
+
+          Use Playwright installed here to sample deterministic frames: real custom elements loaded from unchanged runtime, STICK.at(el,{u,t}) drives each action at exact frame time. Render via canvas/PNG or screenshot frames then ffmpeg, streaming or sequential segments to keep memory bounded. No realtime screenrecord requiring human timing. Render every scene contact sheet using skill/scripts/frames.mjs and motion-check using skill/scripts/motion.mjs. Inspect numeric motion results and fix real glitches. Save test reports; report any unverified checks honestly. Still contact pixels will be reviewed separately after run. Since this is a video adaptation, original per-scene loop resets can happen across clean scene cuts, not while narration continues. No dark full-screen backgrounds. No unrelated metadata/SEO upload package.
+
+          Before full render, save out/project-source.tar.gz excluding node_modules/frames/out/.git and preserving your scene code, HTML, render script, narrative, audio route and timings; always keep work so a diagnosed export failure can resume. Then render final out/output.mp4, ffprobe/decode/audio checks and out/NOTES.md with script, actual voice, skill pin, adaptations and caveats. Do not stop after writing source or a plan. Budget40minutes, prefer efficient nativecanvas rendering. Do not claim success unless actual video file exists.
+          BRIEF
+          set -o pipefail
+          timeout -k 30 2400 opencode run -m opencode/hy4-flash-free "$(cat assignment.txt)" 2>&1 | tee out/build.log
+      - name: Validate finished preview
+        working-directory: /home/runner/future
+        run: |
+          set -euo pipefail
+          test -s out/output.mp4
+          test -s out/project-source.tar.gz
+          ffprobe -v error -show_streams -show_format out/output.mp4 > out/probe.txt
+          python - <<'PY'
+          import json,subprocess
+          d=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-show_format','-of','json','out/output.mp4']))
+          v=next(s for s in d['streams'] if s['codec_type']=='video')
+          assert (v['width'],v['height'])==(1080,1920)
+          assert 45<=float(d['format']['duration'])<=61
+          assert any(s['codec_type']=='audio' for s in d['streams'])
+          PY
+          ffmpeg -v error -i out/output.mp4 -f null -
+          ffmpeg -i out/output.mp4 -af volumedetect -f null - 2> out/audio-check.txt
+      - name: Preserve diagnosed continuation source
+        if: always()
+        run: |
+          cd "$HOME/future"
+          tar --exclude=node_modules --exclude=.git --exclude=out --exclude=frames --exclude='*.png' --exclude='*.mp4' -czf out/retained-work.tar.gz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: humanity-2070-stick-scene
+          path: /home/runner/future/out
+          retention-days: 14
