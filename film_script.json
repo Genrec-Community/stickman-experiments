@@ -1,0 +1,386 @@
+{
+  "meta": {
+    "title": "TOMORROW | An Animated Short Film",
+    "aspect": "16:9",
+    "fps": 30
+  },
+  "scenes": [
+    {
+      "id": "hook",
+      "label": "1. Hook",
+      "type": "title_card",
+      "duration": 5.5,
+      "headline": "\"I'll start Monday.\"",
+      "subline": "He said it every Sunday night.",
+      "chord": [220, 261.63, 329.63]
+    },
+    {
+      "id": "sunday_night",
+      "label": "2. Sunday Night",
+      "type": "stage",
+      "duration": 10.0,
+      "env": "bedroom",
+      "stampBottomRight": "SUNDAY · 11:48 PM",
+      "caption": "Sunday night always promised a cleaner start.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.08, "focusX": 560, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 500,
+          "pose": "sit_phone",
+          "expression": "tired",
+          "facing": 1,
+          "phoneGlow": true,
+          "notifications": true
+        },
+        {
+          "id": "demon",
+          "role": "shadow",
+          "x": 380,
+          "pose": "loom",
+          "appearAt": 6.0,
+          "facing": 1,
+          "speech": { "text": "you've earned tonight.", "at": 6.6, "color": "#ef4444" }
+        }
+      ],
+      "chord": [196, 233.08, 293.66]
+    },
+    {
+      "id": "monday_alarm",
+      "label": "3. Snooze",
+      "type": "stage",
+      "duration": 12.0,
+      "env": "bedroom",
+      "stampBottomRight": "MONDAY · 06:30 AM",
+      "hudTopLeft": { "label": "SCREEN TIME TODAY", "startMin": 0, "endMin": 47 },
+      "caption": "Monday morning came. He hit snooze again.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.06, "focusX": 540, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 520,
+          "pose": "sit_phone",
+          "expression": "tired",
+          "facing": 1,
+          "phoneGlow": true,
+          "notifications": false
+        },
+        {
+          "id": "demon",
+          "role": "shadow",
+          "x": 380,
+          "pose": "loom",
+          "appearAt": 5.5,
+          "facing": 1,
+          "speech": { "text": "five more minutes.", "at": 6.2, "color": "#ef4444" }
+        }
+      ],
+      "chord": [174.61, 220, 261.63]
+    },
+    {
+      "id": "desk_pileup",
+      "label": "4. The Pile",
+      "type": "stage",
+      "duration": 12.0,
+      "env": "desk",
+      "chapterTop": "MONDAY",
+      "stampBottomRight": "11:58 PM",
+      "caption": "The week blurred into a stack of unfinished things.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.1, "focusX": 780, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 760,
+          "pose": "stand",
+          "expression": "tired",
+          "facing": 1
+        },
+        {
+          "id": "demon",
+          "role": "shadow",
+          "x": 620,
+          "pose": "loom",
+          "appearAt": 6.5,
+          "facing": 1,
+          "speech": { "text": "you still have time.", "at": 7.2, "color": "#ef4444" }
+        }
+      ],
+      "chord": [155.56, 196, 233.08]
+    },
+    {
+      "id": "missed_call",
+      "label": "5. Missed Call",
+      "type": "stage",
+      "duration": 12.0,
+      "env": "desk",
+      "stampBottomRight": "FRIDAY · 9:12 PM",
+      "caption": "He let the call go to voicemail.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.09, "focusX": 800, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 780,
+          "pose": "stand",
+          "expression": "tired",
+          "facing": 1
+        },
+        {
+          "id": "demon",
+          "role": "shadow",
+          "x": 620,
+          "pose": "loom",
+          "appearAt": 6.0,
+          "facing": 1,
+          "speech": { "text": "she'll understand.", "at": 6.8, "color": "#ef4444" }
+        }
+      ],
+      "chord": [146.83, 174.61, 220]
+    },
+    {
+      "id": "spark_graph",
+      "label": "6. The Spark",
+      "type": "graph_insert",
+      "duration": 9.0,
+      "chapterTop": "SUNDAY NIGHT",
+      "caption": "Every Sunday, the spark faded before morning.",
+      "xStart": "SUNDAY",
+      "xEnd": "MONDAY",
+      "peakLabel": "THE SPARK",
+      "color": "#ef4444",
+      "chord": [164.81, 196, 246.94]
+    },
+    {
+      "id": "rock_bottom",
+      "label": "7. Rock Bottom",
+      "type": "stage",
+      "duration": 11.0,
+      "env": "bedroom",
+      "stampBottomRight": "SUNDAY · 11:59 PM",
+      "caption": "The room was the same. The years were not.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.1, "focusX": 520, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 520,
+          "pose": "sit_phone",
+          "expression": "tired",
+          "facing": 1,
+          "phoneGlow": true
+        },
+        {
+          "id": "demon",
+          "role": "shadow",
+          "x": 370,
+          "pose": "loom",
+          "appearAt": 0.6,
+          "facing": 1
+        }
+      ],
+      "chord": [130.81, 164.81, 196]
+    },
+    {
+      "id": "matrix_loop",
+      "label": "8. The Loop",
+      "type": "matrix_grid",
+      "duration": 9.0,
+      "chapterTop": "THE LOOP",
+      "caption": "He had made this promise many times before.",
+      "speechText": "next monday.",
+      "chord": [174.61, 220, 261.63]
+    },
+    {
+      "id": "gut_punch",
+      "label": "9. Gut Punch",
+      "type": "stat_impact",
+      "duration": 10.0,
+      "caption": "The math did not care about intentions.",
+      "steps": [
+        { "at": 0.5, "text": "ONE PROMISE A WEEK", "color": "#f4f4f5", "size": 52 },
+        { "at": 2.3, "text": "REPEATED FOR YEARS", "color": "#f4f4f5", "size": 52 },
+        { "at": 4.2, "text": "52 MONDAYS = 1 YEAR GONE", "color": "#ef4444", "size": 72, "glow": true, "sub": "OF HIS LIFE." }
+      ],
+      "chord": [146.83, 174.61, 220]
+    },
+    {
+      "id": "honest_promise",
+      "label": "10. The Honest Promise",
+      "type": "stage",
+      "duration": 11.0,
+      "env": "desk",
+      "chapterTop": "THE NEXT MORNING",
+      "stampBottomRight": "06:10 AM",
+      "caption": "He wrote a smaller promise, and meant it.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.1, "focusX": 780, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 780,
+          "pose": "stand",
+          "expression": "determined",
+          "facing": 1,
+          "goldCracks": true,
+          "speech": { "text": "just begin.", "at": 4.2, "color": "#f4f4f5" }
+        }
+      ],
+      "chord": [196, 246.94, 293.66]
+    },
+    {
+      "id": "day_one",
+      "label": "11. Day One",
+      "type": "stage",
+      "duration": 11.0,
+      "env": "desk",
+      "chapterTop": "DAY 1",
+      "caption": "Ten minutes. Then twenty. Then one honest hour.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.12, "focusX": 760, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 760,
+          "pose": "stand",
+          "expression": "determined",
+          "facing": 1
+        }
+      ],
+      "chord": [220, 261.63, 329.63]
+    },
+    {
+      "id": "week_two",
+      "label": "12. Week Two",
+      "type": "stage",
+      "duration": 10.0,
+      "env": "desk",
+      "chapterTop": "WEEK 2",
+      "caption": "The promise stopped being a date.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.08, "focusX": 800, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 800,
+          "pose": "stand",
+          "expression": "determined",
+          "facing": 1
+        }
+      ],
+      "chord": [233.08, 277.18, 349.23]
+    },
+    {
+      "id": "day_six",
+      "label": "13. Day Six",
+      "type": "stage",
+      "duration": 10.0,
+      "env": "desk",
+      "chapterTop": "DAY 6",
+      "caption": "No Monday required. Just the next small step.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.1, "focusX": 760, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 760,
+          "pose": "stand",
+          "expression": "determined",
+          "facing": 1
+        }
+      ],
+      "chord": [246.94, 293.66, 369.99]
+    },
+    {
+      "id": "monday_again",
+      "label": "14. Monday Again",
+      "type": "stage",
+      "duration": 10.0,
+      "env": "desk",
+      "chapterTop": "MONDAY",
+      "caption": "Monday arrived. He was already working.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.06, "focusX": 780, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 780,
+          "pose": "stand",
+          "expression": "determined",
+          "facing": 1
+        }
+      ],
+      "chord": [261.63, 311.13, 392]
+    },
+    {
+      "id": "final_test",
+      "label": "15. Final Test",
+      "type": "stage",
+      "duration": 16.0,
+      "env": "bedroom",
+      "chapterTop": "SUNDAY NIGHT",
+      "stampBottomRight": "11:52 PM",
+      "caption": "The old voice returned for one last visit.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.06, "focusX": 620, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 540,
+          "xTo": 560,
+          "pose": "stand",
+          "expression": "determined",
+          "facing": 1,
+          "speech": { "text": "not tomorrow.", "at": 9.0, "color": "#f4f4f5" }
+        },
+        {
+          "id": "demon",
+          "role": "shadow",
+          "x": 380,
+          "pose": "loom",
+          "appearAt": 0.8,
+          "facing": 1,
+          "shatterAt": 8.0,
+          "speech": { "text": "monday will be easier.", "at": 2.5, "color": "#ef4444" }
+        }
+      ],
+      "chord": [196, 246.94, 293.66]
+    },
+    {
+      "id": "mirror",
+      "label": "16. Full Circle",
+      "type": "stage",
+      "duration": 12.0,
+      "env": "bedroom",
+      "chapterTop": "SUNDAY NIGHT",
+      "stampBottomRight": "11:52 PM",
+      "caption": "Same room. Same night. A different ending.",
+      "camera": { "zoomFrom": 1.0, "zoomTo": 1.1, "focusX": 560, "focusY": 420 },
+      "actors": [
+        {
+          "id": "hero",
+          "role": "protagonist",
+          "x": 520,
+          "pose": "stand",
+          "expression": "determined",
+          "facing": 1,
+          "goldCracks": true,
+          "speech": { "text": "i start now.", "at": 4.0, "color": "#f4f4f5" }
+        }
+      ],
+      "chord": [261.63, 329.63, 392]
+    },
+    {
+      "id": "end_card",
+      "label": "17. End Card",
+      "type": "end_card",
+      "duration": 7.0,
+      "closingTop": "Tomorrow never",
+      "closingMain": "starts itself.",
+      "ctaText": "If this hit you, like & subscribe.",
+      "chord": [293.66, 369.99, 440]
+    }
+  ]
+}

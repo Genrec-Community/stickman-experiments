@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Day One Film Studio — Code-to-HTML Animated Short Film Template</title>
+<style>
+  :root {
+    --bg-app: #070709;
+    --bg-panel: #111116;
+    --border: #23232c;
+    --text-main: #f3f2ee;
+    --text-muted: #8e8e9c;
+    --accent-red: #ef4444;
+    --accent-gold: #f5b82e;
+    --accent-blue: #60a5fa;
+    --font-film: "Fredoka", "Nunito", "Segoe UI Rounded", "Chalkboard SE", "Comic Sans MS", ui-rounded, system-ui, -apple-system, sans-serif;
+    --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-app);
+    color: var(--text-main);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  body.export-mode {
+    background: #000;
+    justify-content: center;
+  }
+
+  body.export-mode .studio-chrome {
+    display: none !important;
+  }
+
+  body.export-mode .stage-shell {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .studio-wrapper {
+    width: 100%;
+    max-width: 1200px;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .studio-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent-red);
+    box-shadow: 0 0 12px var(--accent-red);
+  }
+
+  .brand h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .brand span {
+    font-size: 12px;
+    color: var(--text-muted);
+    background: #181820;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn {
+    background: #17171f;
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn:hover { background: #22222d; border-color: #363644; }
+  .btn:active { transform: scale(0.97); }
+  .btn.active { background: #261619; border-color: var(--accent-red); color: #fca5a5; }
+  .btn.primary { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
+  .btn.primary:hover { background: #dc2626; }
+
+  .stage-shell {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 68vh;
+    background: #09090b;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.75);
+  }
+
+  .stage-shell.vertical {
+    width: auto;
+    height: 68vh;
+    aspect-ratio: 9 / 16;
+  }
+
+  #film-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    font-family: var(--font-film);
+  }
+
+  .controls-bar {
+    width: 100%;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .transport-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .time-readout {
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 92px;
+    text-align: center;
+  }
+
+  .scrubber {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: #23232e;
+    border-radius: 999px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .scrubber::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent-red);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.7);
+    cursor: pointer;
+  }
+
+  .scene-pills {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .scene-pill {
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    background: #17171f;
+    border: 1px solid #24242f;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .scene-pill:hover { color: var(--text-main); border-color: #3a3a4a; }
+  .scene-pill.current {
+    background: #271518;
+    border-color: var(--accent-red);
+    color: #fff;
+  }
+
+  .script-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+  }
+
+  .script-modal.open { display: flex; }
+
+  .modal-card {
+    background: #111116;
+    border: 1px solid #2a2a35;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 760px;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .modal-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid #23232c;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-head h2 { font-size: 14px; font-weight: 600; }
+
+  .modal-body {
+    padding: 12px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  #script-editor {
+    width: 100%;
+    height: 52vh;
+    background: #0a0a0e;
+    color: #e2e8f0;
+    border: 1px solid #252530;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    resize: none;
+  }
+
+  .modal-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+
+  #editor-status { font-size: 12px; color: var(--accent-gold); }
+</style>
+</head>
+<body>
+
+<div class="studio-wrapper">
+  <header class="studio-header studio-chrome">
+    <div class="brand">
+      <div class="brand-dot"></div>
+      <h1 id="film-title-ui">Day One Film Studio</h1>
+      <span>Code-to-HTML Engine v1.0</span>
+    </div>
+    <div class="header-actions">
+      <button class="btn" id="btn-aspect" title="Toggle 16:9 Cinema / 9:16 Shorts">16:9 Cinema</button>
+      <button class="btn" id="btn-audio" title="Toggle synthesized ambient piano & SFX">Audio: Off</button>
+      <button class="btn" id="btn-edit-json">Edit Film JSON</button>
+    </div>
+  </header>
+
+  <main class="stage-shell" id="stage-shell">
+    <svg id="film-svg" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- Atmospheric Stage Vignette -->
+        <radialGradient id="bg-vignette" cx="50%" cy="46%" r="68%">
+          <stop offset="0%" stop-color="#17171d" />
+          <stop offset="65%" stop-color="#0d0d11" />
+          <stop offset="100%" stop-color="#050507" />
+        </radialGradient>
+
+        <!-- Warm Hanging Bulb Spotlight -->
+        <linearGradient id="warm-cone" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#ffe7a3" stop-opacity="0.28" />
+          <stop offset="65%" stop-color="#f5b82e" stop-opacity="0.06" />
+          <stop offset="100%" stop-color="#f5b82e" stop-opacity="0" />
+        </linearGradient>
+
+        <!-- Cold Phone Screen Glow -->
+        <radialGradient id="phone-glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#93c5fd" stop-opacity="0.5" />
+          <stop offset="50%" stop-color="#60a5fa" stop-opacity="0.16" />
+          <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
+        </radialGradient>
+
+        <!-- Gold Kintsugi / Victory Glow -->
+        <radialGradient id="gold-glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#fde047" stop-opacity="0.7" />
+          <stop offset="60%" stop-color="#f59e0b" stop-opacity="0.2" />
+          <stop offset="100%" stop-color="#f59e0b" stop-opacity="0" />
+        </radialGradient>
+
+        <!-- Red Shadow Demon Aura Filter -->
+        <filter id="shadow-aura" x="-45%" y="-35%" width="190%" height="170%">
+          <feDropShadow dx="0" dy="0" stdDeviation="14" flood-color="#e03131" flood-opacity="0.92" />
+          <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#ff4d4d" flood-opacity="0.75" />
+        </filter>
+
+        <!-- Soft Text / Line Glow -->
+        <filter id="soft-glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+
+        <filter id="red-text-glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#ef4444" flood-opacity="0.7" />
+        </filter>
+      </defs>
+
+      <!-- Layer 0: Background -->
+      <rect x="0" y="0" width="1280" height="720" fill="url(#bg-vignette)" />
+
+      <!-- Layer 1: Dynamic Camera Group -->
+      <g id="camera-root">
+        <g id="layer-env"></g>
+        <g id="layer-actors"></g>
+        <g id="layer-fx"></g>
+        <g id="layer-dialogue"></g>
+      </g>
+
+      <!-- Layer 2: Fixed HUD & Letterbox -->
+      <g id="layer-hud"></g>
+      <g id="layer-letterbox">
+        <rect x="0" y="0" width="1280" height="58" fill="#000000" />
+        <rect x="0" y="662" width="1280" height="58" fill="#000000" />
+      </g>
+      <g id="layer-captions"></g>
+      <rect id="fade-curtain" x="0" y="0" width="1280" height="720" fill="#000000" opacity="0" pointer-events="none" />
+    </svg>
+  </main>
+
+  <section class="controls-bar studio-chrome">
+    <div class="transport-row">
+      <button class="btn primary" id="btn-play">▶ Play</button>
+      <button class="btn" id="btn-restart">↺ Restart</button>
+      <input type="range" class="scrubber" id="scrubber" min="0" max="38" step="0.02" value="0" />
+      <div class="time-readout" id="time-readout">00:00 / 00:38</div>
+    </div>
+    <div class="scene-pills" id="scene-pills"></div>
+  </section>
+</div>
+
+<!-- Declarative Script JSON Editor Modal -->
+<div class="script-modal studio-chrome" id="script-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>Film Script JSON (Declarative Scene Specification)</h2>
+      <button class="btn" id="btn-close-modal">✕ Close</button>
+    </div>
+    <div class="modal-body">
+      <textarea id="script-editor" spellcheck="false"></textarea>
+      <div class="modal-foot">
+        <span id="editor-status">Edit any scene, text, or timing and click Apply.</span>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" id="btn-copy-json">Copy JSON</button>
+          <button class="btn primary" id="btn-apply-json">Apply & Preview</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   1. DECLARATIVE FILM SCRIPT (Edit this JSON to create a brand-new film!)
+   ============================================================================ */
+let FILM_SCRIPT = {
+  meta: {
+    title: "THE WEIGHT OF LATER | An Animated Short Film",
+    aspect: "16:9",
+    fps: 30
+  },
+  scenes: [
+    {
+      id: "hook",
+      label: "1. Hook",
+      type: "title_card",
+      duration: 4.0,
+      headline: '"Just five more minutes."',
+      subline: "He told himself that every single night.",
+      chord: [220, 261.63, 329.63]
+    },
+    {
+      id: "trap",
+      label: "2. The Loop",
+      type: "stage",
+      duration: 7.5,
+      env: "bedroom",
+      hudTopLeft: { label: "SCREEN TIME TODAY", startMin: 5, endMin: 312 },
+      stampBottomRight: "MONDAY",
+      caption: "It always started with one quick scroll.",
+      camera: { zoomFrom: 1.0, zoomTo: 1.08, focusX: 600, focusY: 420 },
+      actors: [
+        {
+          id: "hero", role: "protagonist", x: 520, pose: "sit_phone",
+          expression: "tired", facing: 1, phoneGlow: true, notifications: true
+        },
+        {
+          id: "demon", role: "shadow", x: 405, pose: "loom",
+          appearAt: 3.0, facing: 1,
+          speech: { text: "just five more minutes.", at: 3.7, color: "#ef4444" }
+        }
+      ],
+      chord: [196, 233.08, 293.66]
+    },
+    {
+      id: "matrix",
+      label: "3. Matrix Loop",
+      type: "matrix_grid",
+      duration: 5.0,
+      chapterTop: "DAY 1",
+      caption: "You have made this promise a hundred times.",
+      speechText: "never again.",
+      chord: [174.61, 220, 261.63]
+    },
+    {
+      id: "gutpunch",
+      label: "4. Gut Punch",
+      type: "stat_impact",
+      duration: 5.5,
+      steps: [
+        { at: 0.4, text: "5 HOURS A DAY", color: "#f4f4f5", size: 54 },
+        { at: 1.9, text: "= 76 DAYS A YEAR", color: "#f4f4f5", size: 54 },
+        { at: 3.4, text: "12 YEARS", color: "#ef4444", size: 96, glow: true, sub: "OF HIS LIFE." }
+      ],
+      chord: [146.83, 174.61, 220]
+    },
+    {
+      id: "craving_wave",
+      label: "5. Craving Wave",
+      type: "graph_insert",
+      duration: 5.0,
+      chapterTop: "DAY 3",
+      xStart: "0 min",
+      xEnd: "20 min",
+      peakLabel: "THE URGE PEAKS",
+      color: "#ef4444",
+      caption: "A craving is a wave. If you don't feed it, it falls.",
+      chord: [164.81, 196, 246.94]
+    },
+    {
+      id: "breakthrough",
+      label: "6. Breakthrough",
+      type: "stage",
+      duration: 7.0,
+      env: "desk",
+      chapterTop: "DAY 7",
+      stampBottomRight: "06:00 AM",
+      camera: { zoomFrom: 1.0, zoomTo: 1.12, focusX: 640, focusY: 410 },
+      actors: [
+        {
+          id: "hero", role: "protagonist", x: 540, xTo: 585, pose: "stand",
+          expression: "determined", facing: 1, goldCracks: true,
+          speech: { text: "Not today.", at: 2.5, color: "#f4f4f5" }
+        },
+        {
+          id: "demon", role: "shadow", x: 750, pose: "loom",
+          appearAt: 0.4, shatterAt: 3.8, facing: -1,
+          speech: { text: "stay comfortable.", at: 0.9, color: "#ef4444" }
+        }
+      ],
+      caption: "The voice is still there. It just doesn't run your life anymore.",
+      chord: [261.63, 329.63, 392.00]
+    },
+    {
+      id: "cta",
+      label: "7. End Card",
+      type: "end_card",
+      duration: 4.5,
+      closingTop: "Start your",
+      closingMain: "Day 1 today.",
+      ctaText: "If this hit you, like & subscribe.",
+      chord: [293.66, 369.99, 440.00]
+    }
+  ]
+};
+
+/* ============================================================================
+   2. SVG HELPER & EASING UTILITIES
+   ============================================================================ */
+const SVG_NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs = {}, parent = null) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v !== undefined && v !== null) node.setAttribute(k, String(v));
+  }
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOutCubic = (t) => 1 - Math.pow(1 - clamp(t), 3);
+const easeInOutCubic = (t) => {
+  t = clamp(t);
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+};
+
+/* ============================================================================
+   3. PROCEDURAL WEB AUDIO ENGINE (Optional Browser Preview Sound)
+   ============================================================================ */
+let audioCtx = null;
+let audioEnabled = false;
+let lastAudioSceneId = null;
+let shatterPlayedForScene = null;
+
+function triggerChord(freqs) {
+  if (!audioEnabled || !freqs) return;
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  const now = audioCtx.currentTime;
+  freqs.forEach((f, idx) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(f, now + idx * 0.08);
+    gain.gain.setValueAtTime(0.0001, now + idx * 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.045, now + idx * 0.08 + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.08 + 3.2);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now + idx * 0.08);
+    osc.stop(now + idx * 0.08 + 3.4);
+  });
+}
+
+function triggerShatterSfx() {
+  if (!audioEnabled) return;
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const now = audioCtx.currentTime;
+  [880, 1174.66, 1567.98].forEach((f, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(f, now + i * 0.03);
+    gain.gain.setValueAtTime(0.05, now + i * 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.03 + 0.55);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now + i * 0.03);
+    osc.stop(now + i * 0.03 + 0.6);
+  });
+}
+
+/* ============================================================================
+   4. ENVIRONMENTS (Minimalist Dark-Line Vector Sets)
+   ============================================================================ */
+function drawEnvironment(parent, envName, localT) {
+  const floorY = 555;
+  // Subtle floor line + ground gradient
+  el("line", { x1: 0, y1: floorY, x2: 1280, y2: floorY, stroke: "#2d2d37", "stroke-width": 2.5 }, parent);
+
+  if (envName === "bedroom") {
+    // Hanging warm ceiling lamp
+    el("line", { x1: 640, y1: 58, x2: 640, y2: 148, stroke: "#3a3a45", "stroke-width": 2 }, parent);
+    el("polygon", { points: "640,152 380,555 900,555", fill: "url(#warm-cone)" }, parent);
+    el("circle", { cx: 640, cy: 152, r: 9, fill: "#ffe7a3", filter: "url(#soft-glow)" }, parent);
+
+    // Night window with moon
+    const win = el("g", { transform: "translate(835, 165)" }, parent);
+    el("rect", { x: 0, y: 0, width: 132, height: 112, rx: 14, fill: "#131722", stroke: "#3c3c48", "stroke-width": 3 }, win);
+    el("circle", { cx: 92, cy: 36, r: 16, fill: "#e8ecf8", opacity: 0.9, filter: "url(#soft-glow)" }, win);
+    el("line", { x1: 66, y1: 0, x2: 66, y2: 112, stroke: "#3c3c48", "stroke-width": 3 }, win);
+    el("line", { x1: 0, y1: 56, x2: 132, y2: 56, stroke: "#3c3c48", "stroke-width": 3 }, win);
+
+    // Wall clock
+    const clk = el("g", { transform: "translate(590, 215)" }, parent);
+    el("circle", { cx: 0, cy: 0, r: 42, fill: "#e6e3dc", stroke: "#2b2b34", "stroke-width": 3 }, clk);
+    const minAng = (localT * 45) % 360;
+    const hrAng = (localT * 6 + 30) % 360;
+    el("line", { x1: 0, y1: 0, x2: Math.cos((hrAng - 90) * Math.PI / 180) * 20, y2: Math.sin((hrAng - 90) * Math.PI / 180) * 20, stroke: "#18181b", "stroke-width": 3.5, "stroke-linecap": "round" }, clk);
+    el("line", { x1: 0, y1: 0, x2: Math.cos((minAng - 90) * Math.PI / 180) * 30, y2: Math.sin((minAng - 90) * Math.PI / 180) * 30, stroke: "#ef4444", "stroke-width": 2.2, "stroke-linecap": "round" }, clk);
+    el("circle", { cx: 0, cy: 0, r: 3.5, fill: "#18181b" }, clk);
+
+    // Bed frame + blanket
+    el("rect", { x: 185, y: 412, width: 12, height: 143, rx: 5, fill: "#24242d", stroke: "#3d3d49", "stroke-width": 2.5 }, parent);
+    el("rect", { x: 197, y: 492, width: 345, height: 63, rx: 8, fill: "#1b1b22", stroke: "#3a3a46", "stroke-width": 2.5 }, parent);
+    el("rect", { x: 205, y: 468, width: 80, height: 26, rx: 12, fill: "#4a4a57", stroke: "#25252e", "stroke-width": 2 }, parent);
+    el("path", { d: "M 275 492 Q 375 446 535 478 L 535 508 L 275 508 Z", fill: "#283044", stroke: "#3d4963", "stroke-width": 2.2 }, parent);
+
+    // Dresser
+    el("rect", { x: 760, y: 438, width: 145, height: 117, rx: 10, fill: "#1a1a21", stroke: "#3a3a46", "stroke-width": 2.5 }, parent);
+    el("line", { x1: 760, y1: 496, x2: 905, y2: 496, stroke: "#3a3a46", "stroke-width": 2 }, parent);
+    el("circle", { cx: 810, cy: 467, r: 4, fill: "#6e6e7d" }, parent);
+    el("circle", { cx: 855, cy: 467, r: 4, fill: "#6e6e7d" }, parent);
+    el("circle", { cx: 810, cy: 525, r: 4, fill: "#6e6e7d" }, parent);
+    el("circle", { cx: 855, cy: 525, r: 4, fill: "#6e6e7d" }, parent);
+
+    // Digital red nightstand clock
+    el("rect", { x: 86, y: 455, width: 78, height: 100, rx: 8, fill: "#18181f", stroke: "#373744", "stroke-width": 2.5 }, parent);
+    el("rect", { x: 96, y: 424, width: 58, height: 30, rx: 6, fill: "#121217", stroke: "#3d3d49", "stroke-width": 2 }, parent);
+    const clkTxt = el("text", { x: 125, y: 444, fill: "#ef4444", "font-size": 15, "font-weight": 700, "text-anchor": "middle", "font-family": "monospace" }, parent);
+    clkTxt.textContent = "02:14";
+  } else if (envName === "desk") {
+    // Warm overhead desk spotlight
+    el("polygon", { points: "640,58 340,555 940,555", fill: "url(#warm-cone)" }, parent);
+    // Minimalist study desk + lamp
+    el("rect", { x: 830, y: 428, width: 280, height: 14, rx: 5, fill: "#23232c", stroke: "#3f3f4c", "stroke-width": 2.5 }, parent);
+    el("line", { x1: 855, y1: 442, x2: 855, y2: 555, stroke: "#3f3f4c", "stroke-width": 5 }, parent);
+    el("line", { x1: 1085, y1: 442, x2: 1085, y2: 555, stroke: "#3f3f4c", "stroke-width": 5 }, parent);
+    // Desk lamp
+    el("path", { d: "M 1035 428 L 1052 360 L 1005 335", fill: "none", stroke: "#525263", "stroke-width": 4, "stroke-linecap": "round" }, parent);
+    el("polygon", { points: "1005,335 880,430 1030,430", fill: "url(#warm-cone)" }, parent);
+    el("circle", { cx: 1002, cy: 336, r: 9, fill: "#ffe7a3", filter: "url(#soft-glow)" }, parent);
+  }
+}
+
+/* ============================================================================
+   5. BEAN-PUPPET CHARACTER RIG (Authentic Day One Films Silhouette)
+   ============================================================================ */
+function drawCharacter(parent, actor, localT) {
+  if (actor.appearAt !== undefined && localT < actor.appearAt) return;
+  if (actor.shatterAt !== undefined && localT >= actor.shatterAt) return;
+
+  const isShadow = actor.role === "shadow";
+  const scale = isShadow ? 1.18 : 1.0;
+  const fadeIn = actor.appearAt !== undefined ? clamp((localT - actor.appearAt) / 0.55) : 1;
+  const xPos = actor.xTo !== undefined
+    ? lerp(actor.x, actor.xTo, easeInOutCubic(localT / 3.2))
+    : actor.x;
+  const floorY = 555;
+  const dir = actor.facing || 1;
+  const breath = Math.sin(localT * 2.6) * 2.2;
+
+  const g = el("g", {
+    transform: `translate(${xPos}, ${floorY}) scale(${dir * scale}, ${scale})`,
+    opacity: fadeIn,
+    filter: isShadow ? "url(#shadow-aura)" : null
+  }, parent);
+
+  const bodyFill = isShadow ? "#050507" : (actor.skin || "#ece9e1");
+  const backLimb = isShadow ? "#08080b" : "#b8b4ab";
+  const strokeCol = isShadow ? "#2a0a0a" : "#141418";
+
+  // Legs
+  if (actor.pose === "sit_phone") {
+    // Seated on edge of bed
+    el("path", { d: "M -8 -74 L 32 -74 Q 44 -74 44 -60 L 44 -8", fill: "none", stroke: backLimb, "stroke-width": 18, "stroke-linecap": "round", "stroke-linejoin": "round" }, g);
+    el("path", { d: "M -2 -70 L 38 -70 Q 50 -70 50 -56 L 50 -6", fill: "none", stroke: bodyFill, "stroke-width": 18, "stroke-linecap": "round", "stroke-linejoin": "round" }, g);
+    el("path", { d: "M -2 -70 L 38 -70 Q 50 -70 50 -56 L 50 -6", fill: "none", stroke: strokeCol, "stroke-width": 2.5, "stroke-linecap": "round", "stroke-linejoin": "round" }, g);
+  } else {
+    const walkSwing = actor.xTo !== undefined && localT < 3.2 ? Math.sin(localT * 8) * 16 : 0;
+    // Back leg
+    el("line", { x1: -6, y1: -68, x2: -10 - walkSwing, y2: -6, stroke: backLimb, "stroke-width": 18, "stroke-linecap": "round" }, g);
+    // Front leg
+    el("line", { x1: 6, y1: -68, x2: 10 + walkSwing, y2: -6, stroke: bodyFill, "stroke-width": 18, "stroke-linecap": "round" }, g);
+    el("line", { x1: 6, y1: -68, x2: 10 + walkSwing, y2: -6, stroke: strokeCol, "stroke-width": 2.5, "stroke-linecap": "round" }, g);
+  }
+
+  // Pill Torso + Head
+  const torsoY = (actor.pose === "sit_phone" ? -196 : -198) + breath;
+  el("rect", {
+    x: -30, y: torsoY, width: 60, height: 138, rx: 30,
+    fill: bodyFill, stroke: strokeCol, "stroke-width": isShadow ? 1.5 : 2.8
+  }, g);
+
+  // Optional Kintsugi Gold Cracks on Hero
+  if (actor.goldCracks && !isShadow) {
+    const cracks = el("g", { stroke: "#f5b82e", "stroke-width": 3, fill: "none", "stroke-linecap": "round", filter: "url(#soft-glow)" }, g);
+    el("path", { d: `M -22 ${torsoY + 52} L -8 ${torsoY + 64} L -16 ${torsoY + 82} L -2 ${torsoY + 95}` }, cracks);
+    el("path", { d: `M 16 ${torsoY + 40} L 6 ${torsoY + 55} L 18 ${torsoY + 68}` }, cracks);
+  }
+
+  // Arms & Phone
+  if (actor.pose === "sit_phone") {
+    el("path", { d: `M 6 ${torsoY + 66} L 34 ${torsoY + 96} L 54 ${torsoY + 84}`, fill: "none", stroke: bodyFill, "stroke-width": 15, "stroke-linecap": "round", "stroke-linejoin": "round" }, g);
+    el("path", { d: `M 6 ${torsoY + 66} L 34 ${torsoY + 96} L 54 ${torsoY + 84}`, fill: "none", stroke: strokeCol, "stroke-width": 2.4, "stroke-linecap": "round", "stroke-linejoin": "round" }, g);
+    // Glowing Smartphone
+    el("rect", { x: 52, y: torsoY + 62, width: 12, height: 26, rx: 3, fill: "#1e293b", stroke: "#93c5fd", "stroke-width": 2 }, g);
+    if (actor.phoneGlow) {
+      el("circle", { cx: 48, cy: torsoY + 70, r: 58, fill: "url(#phone-glow)" }, g);
+    }
+    if (actor.notifications) {
+      for (let i = 0; i < 4; i++) {
+        const cyc = (localT * 0.9 + i * 0.35) % 1;
+        const ny = torsoY + 52 - cyc * 64;
+        const nx = 64 + Math.sin(cyc * 5 + i) * 14;
+        const cols = ["#ef4444", "#3b82f6", "#ec4899", "#f59e0b"];
+        el("circle", { cx: nx, cy: ny, r: 5.5, fill: cols[i], opacity: 1 - cyc }, g);
+      }
+    }
+  } else if (isShadow) {
+    // Looming reaching arm
+    el("path", { d: `M 8 ${torsoY + 66} Q 34 ${torsoY + 82} 54 ${torsoY + 92}`, fill: "none", stroke: "#050507", "stroke-width": 15, "stroke-linecap": "round" }, g);
+  } else {
+    el("line", { x1: 4, y1: torsoY + 68, x2: 14, y2: torsoY + 124, stroke: bodyFill, "stroke-width": 15, "stroke-linecap": "round" }, g);
+    el("line", { x1: 4, y1: torsoY + 68, x2: 14, y2: torsoY + 124, stroke: strokeCol, "stroke-width": 2.4, "stroke-linecap": "round" }, g);
+  }
+
+  // Facial Expressions
+  const faceY = torsoY + 34;
+  if (isShadow) {
+    // Glowing red squinting eyes + sinister smirk
+    el("line", { x1: 2, y1: faceY - 2, x2: 14, y2: faceY + 1, stroke: "#ff4d4d", "stroke-width": 3.2, "stroke-linecap": "round" }, g);
+    el("line", { x1: 20, y1: faceY + 1, x2: 28, y2: faceY - 2, stroke: "#ff4d4d", "stroke-width": 3.2, "stroke-linecap": "round" }, g);
+    el("path", { d: `M 6 ${faceY + 13} Q 16 ${faceY + 19} 24 ${faceY + 12}`, fill: "none", stroke: "#ff4d4d", "stroke-width": 2.6, "stroke-linecap": "round" }, g);
+  } else {
+    // Dot eyes
+    el("circle", { cx: 8, cy: faceY, r: 3.4, fill: "#141418" }, g);
+    el("circle", { cx: 22, cy: faceY, r: 3.4, fill: "#141418" }, g);
+    if (actor.expression === "tired") {
+      el("line", { x1: 3, y1: faceY - 6, x2: 13, y2: faceY - 6, stroke: "#141418", "stroke-width": 2.4, "stroke-linecap": "round" }, g);
+      el("line", { x1: 17, y1: faceY - 6, x2: 27, y2: faceY - 6, stroke: "#141418", "stroke-width": 2.4, "stroke-linecap": "round" }, g);
+      el("line", { x1: 10, y1: faceY + 13, x2: 20, y2: faceY + 13, stroke: "#141418", "stroke-width": 2.4, "stroke-linecap": "round" }, g);
+    } else if (actor.expression === "determined") {
+      el("line", { x1: 3, y1: faceY - 9, x2: 14, y2: faceY - 5, stroke: "#141418", "stroke-width": 3, "stroke-linecap": "round" }, g);
+      el("line", { x1: 27, y1: faceY - 9, x2: 16, y2: faceY - 5, stroke: "#141418", "stroke-width": 3, "stroke-linecap": "round" }, g);
+      el("path", { d: `M 9 ${faceY + 12} Q 15 ${faceY + 15} 21 ${faceY + 11}`, fill: "none", stroke: "#141418", "stroke-width": 2.6, "stroke-linecap": "round" }, g);
+    } else {
+      el("path", { d: `M 10 ${faceY + 11} Q 15 ${faceY + 15} 20 ${faceY + 11}`, fill: "none", stroke: "#141418", "stroke-width": 2.5, "stroke-linecap": "round" }, g);
+    }
+  }
+}
+
+/* ============================================================================
+   6. SPECIAL SCENE RENDERERS (Title, Matrix Grid, Stat Impact, Graph, End Card)
+   ============================================================================ */
+function drawShatterParticles(parent, cx, cy, dt) {
+  if (dt < 0 || dt > 1.8) return;
+  const p = clamp(dt / 1.4);
+  for (let i = 0; i < 22; i++) {
+    const ang = (i / 22) * Math.PI * 2 + (i % 3) * 0.25;
+    const dist = easeOutCubic(p) * (70 + (i % 5) * 38);
+    const px = cx + Math.cos(ang) * dist;
+    const py = cy + Math.sin(ang) * dist + p * p * 60;
+    const col = i % 3 === 0 ? "#f5b82e" : "#ef4444";
+    const size = lerp(10, 2, p);
+    el("rect", {
+      x: px - size / 2, y: py - size / 2, width: size, height: size,
+      fill: col, opacity: 1 - p,
+      transform: `rotate(${i * 35 + p * 180} ${px} ${py})`,
+      filter: "url(#soft-glow)"
+    }, parent);
+  }
+}
+
+function renderScene(scene, localT) {
+  const envLayer = document.getElementById("layer-env");
+  const actorsLayer = document.getElementById("layer-actors");
+  const fxLayer = document.getElementById("layer-fx");
+  const dlgLayer = document.getElementById("layer-dialogue");
+  const hudLayer = document.getElementById("layer-hud");
+  const capLayer = document.getElementById("layer-captions");
+  const camRoot = document.getElementById("camera-root");
+
+  [envLayer, actorsLayer, fxLayer, dlgLayer, hudLayer, capLayer].forEach((n) => (n.innerHTML = ""));
+  camRoot.setAttribute("transform", "");
+
+  // Top-center chapter stamp (e.g. DAY 1, DAY 3)
+  if (scene.chapterTop) {
+    const ch = el("text", {
+      x: 640, y: 112, fill: "#f4f4f5", "font-size": 44, "font-weight": 700,
+      "text-anchor": "middle", "letter-spacing": "0.04em"
+    }, hudLayer);
+    ch.textContent = scene.chapterTop;
+  }
+
+  // Bottom-right day/time stamp
+  if (scene.stampBottomRight) {
+    const st = el("text", {
+      x: 1215, y: 632, fill: "#d4d4dc", "font-size": 22, "font-weight": 600,
+      "text-anchor": "end", opacity: 0.85
+    }, hudLayer);
+    st.textContent = scene.stampBottomRight;
+  }
+
+  // Screen Time HUD (Top Left)
+  if (scene.hudTopLeft) {
+    const mins = Math.round(lerp(scene.hudTopLeft.startMin, scene.hudTopLeft.endMin, easeInOutCubic(localT / scene.duration)));
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    const lbl = el("text", { x: 64, y: 108, fill: "#a1a1aa", "font-size": 18, "font-weight": 600, "letter-spacing": "0.06em" }, hudLayer);
+    lbl.textContent = scene.hudTopLeft.label;
+    const val = el("text", { x: 64, y: 148, fill: "#f4f4f5", "font-size": 36, "font-weight": 700 }, hudLayer);
+    val.textContent = `${h}h ${String(m).padStart(2, "0")}m`;
+  }
+
+  // Bottom caption inside letterbox/safe zone
+  if (scene.caption) {
+    const capAlpha = clamp(localT / 0.5) * clamp((scene.duration - localT) / 0.4);
+    const cap = el("text", {
+      x: 640, y: 699, fill: "#d4d4dc", "font-size": 24, "font-weight": 500,
+      "text-anchor": "middle", opacity: capAlpha
+    }, capLayer);
+    cap.textContent = scene.caption;
+  }
+
+  // ---- SCENE TYPE: TITLE CARD ----
+  if (scene.type === "title_card") {
+    const a1 = easeOutCubic(localT / 0.8);
+    const a2 = easeOutCubic((localT - 1.1) / 0.8);
+    const h1 = el("text", {
+      x: 640, y: 346, fill: "#f4f4f5", "font-size": 58, "font-weight": 700,
+      "text-anchor": "middle", opacity: a1
+    }, actorsLayer);
+    h1.textContent = scene.headline;
+    if (scene.subline) {
+      const h2 = el("text", {
+        x: 640, y: 406, fill: "#a1a1aa", "font-size": 28, "font-weight": 500,
+        "text-anchor": "middle", opacity: a2
+      }, actorsLayer);
+      h2.textContent = scene.subline;
+    }
+    return;
+  }
+
+  // ---- SCENE TYPE: STAGE ----
+  if (scene.type === "stage") {
+    if (scene.camera) {
+      const z = lerp(scene.camera.zoomFrom, scene.camera.zoomTo, easeInOutCubic(localT / scene.duration));
+      const fx = scene.camera.focusX || 640;
+      const fy = scene.camera.focusY || 360;
+      camRoot.setAttribute("transform", `translate(${fx}, ${fy}) scale(${z}) translate(${-fx}, ${-fy})`);
+    }
+    drawEnvironment(envLayer, scene.env, localT);
+
+    (scene.actors || []).forEach((actor) => {
+      drawCharacter(actorsLayer, actor, localT);
+
+      if (actor.shatterAt !== undefined && localT >= actor.shatterAt) {
+        drawShatterParticles(fxLayer, actor.x, 420, localT - actor.shatterAt);
+        if (shatterPlayedForScene !== scene.id) {
+          shatterPlayedForScene = scene.id;
+          triggerShatterSfx();
+        }
+      }
+
+      if (actor.speech && localT >= actor.speech.at && (actor.shatterAt === undefined || localT < actor.shatterAt)) {
+        const sAlpha = easeOutCubic((localT - actor.speech.at) / 0.35);
+        const sx = actor.xTo !== undefined ? lerp(actor.x, actor.xTo, easeInOutCubic(localT / 3.2)) : actor.x;
+        const txt = el("text", {
+          x: sx, y: actor.role === "shadow" ? 290 : 326,
+          fill: actor.speech.color || "#f4f4f5",
+          "font-size": 28, "font-weight": 600, "text-anchor": "middle",
+          opacity: sAlpha,
+          filter: actor.role === "shadow" ? "url(#red-text-glow)" : null
+        }, dlgLayer);
+        txt.textContent = actor.speech.text;
+      }
+    });
+    return;
+  }
+
+  // ---- SCENE TYPE: MATRIX 5x5 LOOP ZOOM-OUT ----
+  if (scene.type === "matrix_grid") {
+    const p = easeInOutCubic(clamp((localT - 0.5) / 3.5));
+    const scale = lerp(1.0, 0.24, p);
+    const grid = el("g", { transform: `translate(640, 360) scale(${scale}) translate(-640, -360)` }, actorsLayer);
+    const cols = 5, rows = 5;
+    for (let r = -2; r <= 2; r++) {
+      for (let c = -2; c <= 2; c++) {
+        const ox = c * 1310;
+        const oy = r * 750;
+        const cell = el("g", { transform: `translate(${ox}, ${oy})`, opacity: (r === 0 && c === 0) ? 1 : clamp(p * 1.4) }, grid);
+        el("rect", { x: 0, y: 0, width: 1280, height: 720, fill: "#0e0e13", stroke: "#2b2b36", "stroke-width": 8 }, cell);
+        el("line", { x1: 0, y1: 555, x2: 1280, y2: 555, stroke: "#2d2d37", "stroke-width": 3 }, cell);
+        drawCharacter(cell, { role: "protagonist", x: 640, pose: "stand", expression: "determined", facing: 1 }, localT);
+        const sp = el("text", { x: 640, y: 318, fill: "#f4f4f5", "font-size": 30, "text-anchor": "middle" }, cell);
+        sp.textContent = scene.speechText || "never again.";
+      }
+    }
+    return;
+  }
+
+  // ---- SCENE TYPE: STAT IMPACT ----
+  if (scene.type === "stat_impact") {
+    // Dim hero silhouette below
+    drawCharacter(actorsLayer, { role: "protagonist", x: 640, pose: "sit_phone", expression: "tired", facing: 1, phoneGlow: true, notifications: true }, localT);
+    const ys = [205, 275, 392];
+    (scene.steps || []).forEach((st, idx) => {
+      if (localT < st.at) return;
+      const a = easeOutCubic((localT - st.at) / 0.35);
+      const tNode = el("text", {
+        x: 640, y: ys[idx] || 300,
+        fill: st.color || "#f4f4f5",
+        "font-size": st.size || 52, "font-weight": 800,
+        "text-anchor": "middle", opacity: a,
+        filter: st.glow ? "url(#red-text-glow)" : null
+      }, dlgLayer);
+      tNode.textContent = st.text;
+      if (st.sub) {
+        const sub = el("text", {
+          x: 640, y: (ys[idx] || 300) + 46,
+          fill: "#ef4444", "font-size": 34, "font-weight": 700,
+          "text-anchor": "middle", opacity: easeOutCubic((localT - st.at - 0.3) / 0.35)
+        }, dlgLayer);
+        sub.textContent = st.sub;
+      }
+    });
+    return;
+  }
+
+  // ---- SCENE TYPE: GRAPH INSERT (Craving Wave / Peak Curve) ----
+  if (scene.type === "graph_insert") {
+    const baseY = 515, leftX = 280, rightX = 1000;
+    el("line", { x1: leftX, y1: baseY, x2: rightX, y2: baseY, stroke: "#6c6c7a", "stroke-width": 3 }, envLayer);
+    el("line", { x1: leftX, y1: baseY, x2: leftX, y2: 215, stroke: "#6c6c7a", "stroke-width": 3 }, envLayer);
+
+    const lbl1 = el("text", { x: leftX, y: baseY + 34, fill: "#a1a1aa", "font-size": 22, "text-anchor": "middle" }, envLayer);
+    lbl1.textContent = scene.xStart || "0 min";
+    const lbl2 = el("text", { x: rightX, y: baseY + 34, fill: "#a1a1aa", "font-size": 22, "text-anchor": "middle" }, envLayer);
+    lbl2.textContent = scene.xEnd || "20 min";
+
+    // Build bell-curve wave points
+    const prog = easeInOutCubic(clamp((localT - 0.3) / 3.2));
+    const pts = [];
+    const steps = 60;
+    const maxI = Math.max(1, Math.floor(steps * prog));
+    let lastX = leftX, lastY = baseY;
+    for (let i = 0; i <= maxI; i++) {
+      const u = i / steps;
+      const x = lerp(leftX, rightX, u);
+      const wave = Math.exp(-Math.pow((u - 0.48) / 0.19, 2));
+      const y = baseY - wave * 255;
+      pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+      lastX = x; lastY = y;
+    }
+    el("polyline", {
+      points: pts.join(" "), fill: "none",
+      stroke: scene.color || "#ef4444", "stroke-width": 5, "stroke-linecap": "round",
+      filter: "url(#red-text-glow)"
+    }, actorsLayer);
+    el("circle", { cx: lastX, cy: lastY, r: 9, fill: "#ffffff", filter: "url(#soft-glow)" }, actorsLayer);
+
+    if (prog > 0.5) {
+      const pk = el("text", {
+        x: lerp(leftX, rightX, 0.48), y: 232,
+        fill: scene.color || "#ef4444", "font-size": 24, "font-weight": 700,
+        "text-anchor": "middle", opacity: easeOutCubic((prog - 0.5) * 2.5)
+      }, dlgLayer);
+      pk.textContent = scene.peakLabel || "PEAK";
+    }
+    return;
+  }
+
+  // ---- SCENE TYPE: END CARD (Animated Subscribe + Like) ----
+  if (scene.type === "end_card") {
+    if (localT < 1.8) {
+      const a = easeOutCubic(localT / 0.6);
+      const t1 = el("text", { x: 640, y: 318, fill: "#d4d4dc", "font-size": 34, "text-anchor": "middle", opacity: a }, actorsLayer);
+      t1.textContent = scene.closingTop || "Start your";
+      const t2 = el("text", { x: 640, y: 386, fill: "#ffffff", "font-size": 68, "font-weight": 800, "text-anchor": "middle", opacity: easeOutCubic((localT - 0.3) / 0.6) }, actorsLayer);
+      t2.textContent = scene.closingMain || "Day 1 today.";
+    } else {
+      const dt = localT - 1.8;
+      const a = easeOutCubic(dt / 0.4);
+      const t = el("text", { x: 640, y: 295, fill: "#e4e4ec", "font-size": 34, "font-weight": 600, "text-anchor": "middle", opacity: a }, actorsLayer);
+      t.textContent = scene.ctaText || "If this hit you, like & subscribe.";
+
+      const subClicked = dt > 1.1;
+      const likeClicked = dt > 1.9;
+
+      // Subscribe pill
+      el("rect", {
+        x: 458, y: 344, width: 210, height: 56, rx: 28,
+        fill: subClicked ? "#3f3f46" : "#dc2626", opacity: a
+      }, actorsLayer);
+      const subTxt = el("text", { x: 563, y: 380, fill: "#ffffff", "font-size": 22, "font-weight": 700, "text-anchor": "middle", opacity: a }, actorsLayer);
+      subTxt.textContent = subClicked ? "SUBSCRIBED" : "SUBSCRIBE";
+
+      // Like pill
+      el("rect", { x: 696, y: 344, width: 120, height: 56, rx: 28, fill: "#27272a", opacity: a }, actorsLayer);
+      const likeTxt = el("text", {
+        x: 756, y: 380, fill: likeClicked ? "#60a5fa" : "#e4e4e7",
+        "font-size": 22, "font-weight": 700, "text-anchor": "middle", opacity: a
+      }, actorsLayer);
+      likeTxt.textContent = likeClicked ? "👍 1" : "👍 0";
+
+      // Animated pointer cursor
+      const cx = dt < 1.1
+        ? lerp(640, 570, easeInOutCubic(dt / 1.0))
+        : lerp(570, 755, easeInOutCubic((dt - 1.1) / 0.75));
+      const cy = dt < 1.1
+        ? lerp(460, 378, easeInOutCubic(dt / 1.0))
+        : lerp(378, 378, easeInOutCubic((dt - 1.1) / 0.75));
+      el("polygon", {
+        points: `${cx},${cy} ${cx},${cy + 26} ${cx + 8},${cy + 20} ${cx + 15},${cy + 30} ${cx + 20},${cy + 27} ${cx + 13},${cy + 17} ${cx + 22},${cy + 16}`,
+        fill: "#ffffff", stroke: "#18181b", "stroke-width": 2, opacity: a
+      }, fxLayer);
+    }
+  }
+}
+
+/* ============================================================================
+   7. TIMELINE ENGINE & DETERMINISTIC FRAME-CAPTURE API
+   ============================================================================ */
+let totalDuration = 0;
+let sceneOffsets = [];
+let currentTime = 0;
+let isPlaying = false;
+let rafId = null;
+let lastFrameTs = null;
+
+function rebuildTimeline() {
+  sceneOffsets = [];
+  let acc = 0;
+  for (const s of FILM_SCRIPT.scenes) {
+    sceneOffsets.push({ start: acc, end: acc + s.duration, scene: s });
+    acc += s.duration;
+  }
+  totalDuration = acc;
+  const scrubber = document.getElementById("scrubber");
+  scrubber.max = totalDuration.toFixed(2);
+  document.getElementById("film-title-ui").textContent = FILM_SCRIPT.meta.title || "Day One Film Studio";
+
+  const pills = document.getElementById("scene-pills");
+  pills.innerHTML = "";
+  sceneOffsets.forEach((item, idx) => {
+    const b = document.createElement("button");
+    b.className = "scene-pill";
+    b.textContent = item.scene.label || `Scene ${idx + 1}`;
+    b.dataset.index = idx;
+    b.onclick = () => { seekTo(item.start + 0.05); };
+    pills.appendChild(b);
+  });
+}
+
+function fmtTime(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function seekTo(timeSec) {
+  currentTime = clamp(timeSec, 0, Math.max(0.01, totalDuration - 0.001));
+  let active = sceneOffsets[sceneOffsets.length - 1];
+  let activeIdx = sceneOffsets.length - 1;
+  for (let i = 0; i < sceneOffsets.length; i++) {
+    if (currentTime >= sceneOffsets[i].start && currentTime < sceneOffsets[i].end) {
+      active = sceneOffsets[i];
+      activeIdx = i;
+      break;
+    }
+  }
+  const localT = currentTime - active.start;
+  renderScene(active.scene, localT);
+
+  // Subtle cross-fade at scene boundaries
+  const fadeIn = clamp(localT / 0.25);
+  const fadeOut = clamp((active.scene.duration - localT) / 0.25);
+  document.getElementById("fade-curtain").setAttribute("opacity", (1 - Math.min(fadeIn, fadeOut)).toFixed(3));
+
+  if (isPlaying && lastAudioSceneId !== active.scene.id) {
+    lastAudioSceneId = active.scene.id;
+    shatterPlayedForScene = null;
+    triggerChord(active.scene.chord);
+  }
+
+  document.getElementById("scrubber").value = currentTime.toFixed(2);
+  document.getElementById("time-readout").textContent = `${fmtTime(currentTime)} / ${fmtTime(totalDuration)}`;
+  document.querySelectorAll(".scene-pill").forEach((p, idx) => {
+    p.classList.toggle("current", idx === activeIdx);
+  });
+}
+
+function tick(ts) {
+  if (!isPlaying) return;
+  if (lastFrameTs === null) lastFrameTs = ts;
+  const dt = Math.min(0.1, (ts - lastFrameTs) / 1000);
+  lastFrameTs = ts;
+  currentTime += dt;
+  if (currentTime >= totalDuration) {
+    currentTime = totalDuration - 0.01;
+    seekTo(currentTime);
+    setPlaying(false);
+    return;
+  }
+  seekTo(currentTime);
+  rafId = requestAnimationFrame(tick);
+}
+
+function setPlaying(play) {
+  isPlaying = play;
+  lastFrameTs = null;
+  document.getElementById("btn-play").textContent = play ? "❚❚ Pause" : "▶ Play";
+  if (play) {
+    if (currentTime >= totalDuration - 0.05) currentTime = 0;
+    lastAudioSceneId = null;
+    rafId = requestAnimationFrame(tick);
+  } else if (rafId) {
+    cancelAnimationFrame(rafId);
+  }
+}
+
+// Public API for headless Playwright -> FFmpeg deterministic video export
+window.FILM_ENGINE = {
+  seekTo: (sec) => { setPlaying(false); seekTo(sec); },
+  getDuration: () => totalDuration,
+  getFps: () => (FILM_SCRIPT.meta && FILM_SCRIPT.meta.fps) || 30,
+  setExportMode: (enabled) => { document.body.classList.toggle("export-mode", !!enabled); },
+  setAspect: (ratio) => {
+    const shell = document.getElementById("stage-shell");
+    const svg = document.getElementById("film-svg");
+    const isVert = ratio === "9:16";
+    shell.classList.toggle("vertical", isVert);
+    svg.setAttribute("preserveAspectRatio", isVert ? "xMidYMid slice" : "xMidYMid meet");
+    document.getElementById("btn-aspect").textContent = isVert ? "9:16 Shorts" : "16:9 Cinema";
+  },
+  loadScript: (scriptObj) => {
+    FILM_SCRIPT = scriptObj;
+    rebuildTimeline();
+    seekTo(0);
+  }
+};
+
+/* ============================================================================
+   8. STUDIO UI BINDINGS & INITIALIZATION
+   ============================================================================ */
+document.getElementById("btn-play").onclick = () => setPlaying(!isPlaying);
+document.getElementById("btn-restart").onclick = () => { seekTo(0); setPlaying(true); };
+document.getElementById("scrubber").oninput = (e) => { setPlaying(false); seekTo(parseFloat(e.target.value)); };
+
+let currentAspect = "16:9";
+document.getElementById("btn-aspect").onclick = () => {
+  currentAspect = currentAspect === "16:9" ? "9:16" : "16:9";
+  window.FILM_ENGINE.setAspect(currentAspect);
+};
+
+document.getElementById("btn-audio").onclick = (e) => {
+  audioEnabled = !audioEnabled;
+  e.target.textContent = audioEnabled ? "Audio: On" : "Audio: Off";
+  e.target.classList.toggle("active", audioEnabled);
+};
+
+const modal = document.getElementById("script-modal");
+const editor = document.getElementById("script-editor");
+document.getElementById("btn-edit-json").onclick = () => {
+  setPlaying(false);
+  editor.value = JSON.stringify(FILM_SCRIPT, null, 2);
+  modal.classList.add("open");
+};
+document.getElementById("btn-close-modal").onclick = () => modal.classList.remove("open");
+document.getElementById("btn-copy-json").onclick = () => {
+  navigator.clipboard && navigator.clipboard.writeText(editor.value);
+  document.getElementById("editor-status").textContent = "Copied JSON to clipboard.";
+};
+document.getElementById("btn-apply-json").onclick = () => {
+  try {
+    const parsed = JSON.parse(editor.value);
+    window.FILM_ENGINE.loadScript(parsed);
+    modal.classList.remove("open");
+    setPlaying(true);
+  } catch (err) {
+    document.getElementById("editor-status").textContent = "JSON Error: " + err.message;
+  }
+};
+
+// URL params for automated headless rendering (?export=1&aspect=9:16)
+const params = new URLSearchParams(window.location.search);
+if (params.get("export") === "1") window.FILM_ENGINE.setExportMode(true);
+if (params.get("aspect") === "9:16") window.FILM_ENGINE.setAspect("9:16");
+
+rebuildTimeline();
+seekTo(0);
+// Auto-play on interactive load unless in export mode
+if (params.get("export") !== "1") setPlaying(true);
+</script>
+</body>
+</html>
